@@ -14,6 +14,7 @@ import { RemindersModule } from "@/components/modules/RemindersModule";
 import { TripsModule } from "@/components/modules/TripsModule";
 import { MaintenanceModule } from "@/components/modules/MaintenanceModule";
 import { GardenModule, VoiceCaptureButton } from "@/components/modules/GardenModule";
+import { AuthControls } from "@/components/ui/AuthControls";
 
 export const dynamic = "force-dynamic";
 
@@ -34,9 +35,12 @@ export default async function DashboardPage() {
 
   return (
     <main className="mx-auto w-full max-w-7xl flex-1 px-6 py-8">
-      <header className="mb-6">
-        <p className="font-serif text-3xl text-ink">Household</p>
-        <p className="text-sm text-sage">Everything you&rsquo;re both keeping track of, in one place.</p>
+      <header className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <p className="font-serif text-3xl text-ink">Household</p>
+          <p className="text-sm text-sage">Everything you&rsquo;re both keeping track of, in one place.</p>
+        </div>
+        <AuthControls />
       </header>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[2fr_1fr]">
