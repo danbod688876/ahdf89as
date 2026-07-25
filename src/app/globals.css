@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+:root {
+  /* Palette — Household Dashboard spec §6 */
+  --color-mist: #eef1ec; /* base background */
+  --color-pine: #3f5b4e; /* primary accent */
+  --color-sand: #c9a87c; /* secondary accent — highlights, badges, trips module */
+  --color-ink: #2b2e2c; /* primary text */
+  --color-sage: #7c8880; /* secondary text, dividers */
+
+  --background: var(--color-mist);
+  --foreground: var(--color-ink);
+}
+
+@theme inline {
+  --color-mist: var(--color-mist);
+  --color-pine: var(--color-pine);
+  --color-sand: var(--color-sand);
+  --color-ink: var(--color-ink);
+  --color-sage: var(--color-sage);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --font-sans: var(--font-inter);
+  --font-serif: var(--font-fraunces);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
