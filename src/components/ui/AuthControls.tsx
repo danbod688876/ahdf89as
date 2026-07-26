@@ -1,7 +1,10 @@
 import { auth, signOut } from "@/lib/auth";
 
 export async function AuthControls() {
-  const session = await auth();
+  // Sign-in is optional right now (spec-mandated login gate is disabled for
+  // solo testing) — a misconfigured auth setup (e.g. missing AUTH_SECRET)
+  // should degrade this one control, not take down the whole dashboard.
+  const session = await auth().catch(() => null);
 
   if (!session?.user) {
     return (
