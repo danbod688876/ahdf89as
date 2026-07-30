@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Droplet, Scissors, Leaf, Eye, HelpCircle, Pencil, Repeat, X } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
+import { PlantThumbnail, plantIdentityLine } from "./PlantThumbnail";
 import type { GardenTask, Plant } from "@/lib/db/schema";
 
 const ACTION_ICON: Record<GardenTask["actionType"], typeof Droplet> = {
@@ -32,6 +33,7 @@ export function GardenTaskRow({ task }: { task: TaskWithPlant }) {
   // different from the expanded explanation — avoids redundant text for
   // manually-added tasks that never went through Claude.
   const showOriginalNote = task.detail && task.detail !== task.rawText;
+  const identityLine = plantIdentityLine(task.plant);
 
   async function markDone() {
     setIsSaving(true);
@@ -177,19 +179,11 @@ export function GardenTaskRow({ task }: { task: TaskWithPlant }) {
         <Check className="size-3.5" />
       </button>
 
-      <div className="relative mt-0.5 size-9 shrink-0 overflow-hidden rounded-full bg-sage/15">
-        {task.plant?.referencePhotoUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={task.plant.referencePhotoUrl}
-            alt={task.plant.commonName}
-            className="absolute inset-0 size-full object-cover"
-          />
-        )}
-      </div>
+      <PlantThumbnail plant={task.plant} />
       <div className="min-w-0 flex-1">
         <p className="text-sm text-ink">{task.plant?.commonName ?? "Unidentified plant"}</p>
-        <p className="mt-0.5 flex items-start gap-1 text-xs text-ink">
+        {identityLine && <p className="text-xs italic text-sage">{identityLine}</p>}
+        <p className="mt-1 flex items-start gap-1 text-xs text-ink">
           <Icon className="mt-0.5 size-3 shrink-0 text-sage" />
           <span>{task.detail ?? task.rawText}</span>
         </p>

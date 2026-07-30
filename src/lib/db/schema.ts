@@ -207,8 +207,12 @@ export const hotelOptionsRelations = relations(hotelOptions, ({ one }) => ({
   trip: one(trips, { fields: [hotelOptions.tripId], references: [trips.id] }),
 }));
 
-export const maintenanceItemsRelations = relations(maintenanceItems, ({ many }) => ({
+export const maintenanceItemsRelations = relations(maintenanceItems, ({ many, one }) => ({
   log: many(maintenanceLog),
+  // Only populated when asset_type = garden; assetRefId points at plants.id.
+  // Not a DB-level FK (garden is one of three asset types sharing this
+  // table), just a query-time relation so garden items can show a photo.
+  plant: one(plants, { fields: [maintenanceItems.assetRefId], references: [plants.id] }),
 }));
 
 export const maintenanceLogRelations = relations(maintenanceLog, ({ one }) => ({

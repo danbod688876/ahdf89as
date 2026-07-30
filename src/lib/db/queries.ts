@@ -40,7 +40,9 @@ export async function getTrips() {
 
 export async function getMaintenanceItems() {
   return db.query.maintenanceItems.findMany({
-    with: { log: true }, // needed for per-vehicle total cost (spec follow-up)
+    // log: per-vehicle total cost; plant: photo/ID for garden recurring items
+    // (null for home/vehicle rows, where asset_ref_id isn't set).
+    with: { log: true, plant: true },
     orderBy: asc(maintenanceItems.nextDue),
   });
 }

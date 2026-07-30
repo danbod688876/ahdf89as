@@ -6,9 +6,10 @@ import { ChevronDown, Pencil, X } from "lucide-react";
 import { differenceInCalendarDays, format } from "date-fns";
 import { Badge } from "@/components/ui/Badge";
 import { cn, currency } from "@/lib/utils";
-import type { MaintenanceItem, MaintenanceLogEntry } from "@/lib/db/schema";
+import { PlantThumbnail, plantIdentityLine } from "./PlantThumbnail";
+import type { MaintenanceItem, MaintenanceLogEntry, Plant } from "@/lib/db/schema";
 
-export type ItemWithLog = MaintenanceItem & { log: MaintenanceLogEntry[] };
+export type ItemWithLog = MaintenanceItem & { log: MaintenanceLogEntry[]; plant?: Plant | null };
 
 function lastCost(item: ItemWithLog): number | null {
   const sorted = [...item.log].sort((a, b) => b.completedAt.localeCompare(a.completedAt));
@@ -40,6 +41,8 @@ export function MaintenanceItemRow({ item }: { item: ItemWithLog }) {
   // vehicle service or home repairs.
   const showCostAndNote = item.assetType !== "garden";
   const logFieldCount = 1 + (showMileage ? 1 : 0) + (showCostAndNote ? 2 : 0);
+  const isGardenItem = item.assetType === "garden";
+  const identityLine = isGardenItem ? plantIdentityLine(item.plant) : null;
 
   async function saveItem() {
     setIsSaving(true);
@@ -91,16 +94,20 @@ export function MaintenanceItemRow({ item }: { item: ItemWithLog }) {
       <button
         type="button"
         onClick={() => setIsExpanded((v) => !v)}
-        className="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left"
+        className="flex w-full items-center justify-between gap-3 px-2.5 py-1.5 text-left"
       >
-        <div className="min-w-0">
-          <p className="truncate text-sm text-ink">{item.task}</p>
-          <p className="text-xs text-sage">
-            {item.lastDone
-              ? `Last done ${format(new Date(item.lastDone), "MMM d, yyyy")}`
-              : "Not logged yet"}
-            {showCostAndNote && cost !== null && ` · ${currency(cost)}`}
-          </p>
+        <div className="flex min-w-0 items-center gap-3">
+          {isGardenItem && <PlantThumbnail plant={item.plant} />}
+          <div className="min-w-0">
+            <p className="truncate text-sm text-ink">{item.task}</p>
+            {identityLine && <p className="truncate text-xs italic text-sage">{identityLine}</p>}
+            <p className="text-xs text-sage">
+              {item.lastDone
+                ? `Last done ${format(new Date(item.lastDone), "MMM d, yyyy")}`
+                : "Not logged yet"}
+              {showCostAndNote && cost !== null && ` · ${currency(cost)}`}
+            </p>
+          </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {item.nextDue && (
