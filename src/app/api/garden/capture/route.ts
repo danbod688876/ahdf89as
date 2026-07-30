@@ -65,6 +65,7 @@ export async function POST(request: Request) {
     .values({
       plantId,
       rawText: body.data.rawText,
+      detail: parsed.detail,
       actionType: parsed.action,
       urgency: parsed.urgency,
       createdBy: body.data.createdBy,

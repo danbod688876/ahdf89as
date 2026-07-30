@@ -1,0 +1,1 @@
+ALTER TABLE "garden_tasks" ADD COLUMN "detail" text;

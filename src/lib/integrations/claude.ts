@@ -2,22 +2,37 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { IntegrationError } from "./errors";
+import { GARDEN_LOCATION } from "./weather";
 
 const client = new Anthropic();
+
+function currentSeason(): string {
+  const month = new Date().getMonth() + 1; // Northern hemisphere
+  if ([12, 1, 2].includes(month)) return "winter";
+  if ([3, 4, 5].includes(month)) return "spring";
+  if ([6, 7, 8].includes(month)) return "summer";
+  return "fall";
+}
 
 const captureSchema = z.object({
   plantName: z.string().describe("Best-guess plant name or nickname mentioned"),
   locationHint: z.string().nullable().describe("Where in the garden, if mentioned"),
   action: z.enum(["water", "prune", "fertilize", "watch", "other"]),
   urgency: z.enum(["today", "this_week", "someday"]),
+  detail: z
+    .string()
+    .describe(
+      "Expand her short flagged note into a clear, specific, plain-language explanation of exactly what to do — he's the one who'll actually do the work and isn't a gardening expert, so skip generic advice and be concrete (how much water, where to cut, what to check for). 1-3 sentences."
+    ),
 });
 
 export type ParsedGardenCapture = z.infer<typeof captureSchema>;
 
 /**
  * Voice/text capture (spec §2.7): "hydrangeas by the fence need watering"
- * -> structured task fields. Low effort — this is a short extraction task,
- * not a reasoning-heavy one.
+ * -> structured task fields, plus an expanded, actionable explanation.
+ * This is the core of the app's "take the mental load off her" goal — she
+ * flags an issue in a sentence, he gets back something he can just follow.
  */
 export async function parseGardenCapture(rawText: string): Promise<ParsedGardenCapture> {
   try {
@@ -28,7 +43,11 @@ export async function parseGardenCapture(rawText: string): Promise<ParsedGardenC
       messages: [
         {
           role: "user",
-          content: `Extract a garden task from this note: "${rawText}"`,
+          content: [
+            `She just flagged a garden task in passing: "${rawText}"`,
+            `Zone: ${GARDEN_LOCATION.name}, coastal BC (~8a/8b)`,
+            `Season: ${currentSeason()}`,
+          ].join("\n"),
         },
       ],
     });

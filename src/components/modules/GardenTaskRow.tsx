@@ -21,12 +21,17 @@ export function GardenTaskRow({ task }: { task: TaskWithPlant }) {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [rawText, setRawText] = useState(task.rawText);
+  const [detail, setDetail] = useState(task.detail ?? task.rawText);
   const [urgency, setUrgency] = useState(task.urgency);
   const [repeats, setRepeats] = useState(false);
   const [intervalDays, setIntervalDays] = useState(14);
   const [error, setError] = useState<string | null>(null);
 
   const Icon = ACTION_ICON[task.actionType];
+  // Only show her original phrasing as a caption when it's genuinely
+  // different from the expanded explanation — avoids redundant text for
+  // manually-added tasks that never went through Claude.
+  const showOriginalNote = task.detail && task.detail !== task.rawText;
 
   async function markDone() {
     setIsSaving(true);
@@ -57,7 +62,7 @@ export function GardenTaskRow({ task }: { task: TaskWithPlant }) {
             assetType: "garden",
             assetName: task.plant?.commonName ?? rawText,
             assetRefId: task.plantId ?? undefined,
-            task: rawText,
+            task: detail || rawText,
             intervalDays,
             lastDone: new Date().toISOString().slice(0, 10),
           }),
@@ -72,7 +77,7 @@ export function GardenTaskRow({ task }: { task: TaskWithPlant }) {
         const res = await fetch(`/api/garden/tasks/${task.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ rawText, urgency }),
+          body: JSON.stringify({ rawText, detail, urgency }),
         });
         if (!res.ok) throw new Error("Couldn't save changes.");
       }
@@ -88,11 +93,23 @@ export function GardenTaskRow({ task }: { task: TaskWithPlant }) {
   if (isEditing) {
     return (
       <li className="rounded-lg border border-pine/20 bg-white/70 p-3">
-        <input
-          value={rawText}
-          onChange={(e) => setRawText(e.target.value)}
-          className="w-full rounded-lg border border-sage/30 bg-white p-2 text-sm text-ink outline-none focus:border-pine"
-        />
+        <label className="block text-xs text-sage">
+          What she said
+          <input
+            value={rawText}
+            onChange={(e) => setRawText(e.target.value)}
+            className="mt-0.5 w-full rounded-lg border border-sage/30 bg-white p-2 text-sm text-ink outline-none focus:border-pine"
+          />
+        </label>
+        <label className="mt-2 block text-xs text-sage">
+          What to actually do
+          <textarea
+            value={detail}
+            onChange={(e) => setDetail(e.target.value)}
+            rows={2}
+            className="mt-0.5 w-full rounded-lg border border-sage/30 bg-white p-2 text-sm text-ink outline-none focus:border-pine"
+          />
+        </label>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <select
             value={urgency}
@@ -149,18 +166,18 @@ export function GardenTaskRow({ task }: { task: TaskWithPlant }) {
   }
 
   return (
-    <li className="flex items-center gap-3 rounded-lg bg-pine/5 px-2.5 py-2">
+    <li className="flex items-start gap-3 rounded-lg bg-pine/5 px-2.5 py-2">
       <button
         type="button"
         onClick={markDone}
         disabled={isSaving}
         aria-label="Mark done"
-        className="flex size-6 shrink-0 items-center justify-center rounded-full border border-pine/40 text-transparent hover:bg-pine/10 hover:text-pine"
+        className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border border-pine/40 text-transparent hover:bg-pine/10 hover:text-pine"
       >
         <Check className="size-3.5" />
       </button>
 
-      <div className="relative size-9 shrink-0 overflow-hidden rounded-full bg-sage/15">
+      <div className="relative mt-0.5 size-9 shrink-0 overflow-hidden rounded-full bg-sage/15">
         {task.plant?.referencePhotoUrl && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -171,12 +188,14 @@ export function GardenTaskRow({ task }: { task: TaskWithPlant }) {
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm text-ink">
-          {task.plant?.commonName ?? "Unidentified plant"}
+        <p className="text-sm text-ink">{task.plant?.commonName ?? "Unidentified plant"}</p>
+        <p className="mt-0.5 flex items-start gap-1 text-xs text-ink">
+          <Icon className="mt-0.5 size-3 shrink-0 text-sage" />
+          <span>{task.detail ?? task.rawText}</span>
         </p>
-        <p className="flex items-center gap-1 text-xs text-sage">
-          <Icon className="size-3" /> {task.rawText}
-        </p>
+        {showOriginalNote && (
+          <p className="mt-1 text-xs italic text-sage">&ldquo;{task.rawText}&rdquo;</p>
+        )}
       </div>
       <Badge tone={task.urgency === "today" ? "sand" : task.urgency === "this_week" ? "pine" : "sage"}>
         {task.urgency.replace("_", " ")}
@@ -185,7 +204,7 @@ export function GardenTaskRow({ task }: { task: TaskWithPlant }) {
         type="button"
         onClick={() => setIsEditing(true)}
         aria-label="Edit task"
-        className="text-sage hover:text-ink"
+        className="mt-0.5 text-sage hover:text-ink"
       >
         <Pencil className="size-3.5" />
       </button>

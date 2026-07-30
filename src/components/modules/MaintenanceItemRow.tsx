@@ -35,6 +35,7 @@ export function MaintenanceItemRow({ item }: { item: ItemWithLog }) {
     : null;
   const cost = lastCost(item);
   const history = [...item.log].sort((a, b) => b.completedAt.localeCompare(a.completedAt));
+  const showMileage = item.assetType === "vehicle";
 
   async function saveItem() {
     setIsSaving(true);
@@ -161,20 +162,22 @@ export function MaintenanceItemRow({ item }: { item: ItemWithLog }) {
           {/* Log a service */}
           <div className="rounded-lg border border-sage/20 bg-white/60 p-2.5">
             <p className="text-xs font-medium text-ink">Log a completion</p>
-            <div className="mt-1.5 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+            <div className={cn("mt-1.5 grid grid-cols-2 gap-1.5", showMileage ? "sm:grid-cols-4" : "sm:grid-cols-3")}>
               <input
                 type="date"
                 value={logDate}
                 onChange={(e) => setLogDate(e.target.value)}
                 className="rounded-lg border border-sage/30 bg-white px-2 py-1 text-xs text-ink"
               />
-              <input
-                type="number"
-                placeholder="Mileage"
-                value={logMileage}
-                onChange={(e) => setLogMileage(e.target.value)}
-                className="rounded-lg border border-sage/30 bg-white px-2 py-1 text-xs text-ink"
-              />
+              {showMileage && (
+                <input
+                  type="number"
+                  placeholder="Mileage"
+                  value={logMileage}
+                  onChange={(e) => setLogMileage(e.target.value)}
+                  className="rounded-lg border border-sage/30 bg-white px-2 py-1 text-xs text-ink"
+                />
+              )}
               <input
                 type="number"
                 step="0.01"

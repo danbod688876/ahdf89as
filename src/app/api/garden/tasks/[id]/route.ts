@@ -10,6 +10,7 @@ const updateTaskSchema = z.object({
   urgency: z.enum(["today", "this_week", "someday"]).optional(),
   plantId: z.string().uuid().nullable().optional(),
   rawText: z.string().min(1).optional(),
+  detail: z.string().nullable().optional(),
   actionType: z.enum(["water", "prune", "fertilize", "watch", "other"]).optional(),
 });
 

@@ -180,6 +180,7 @@ export const gardenTasks = pgTable("garden_tasks", {
   id: uuid("id").primaryKey().defaultRandom(),
   plantId: uuid("plant_id").references(() => plants.id, { onDelete: "set null" }),
   rawText: text("raw_text").notNull(), // the original voice/text capture
+  detail: text("detail"), // Claude-expanded, actionable explanation for whoever executes it
   actionType: gardenActionTypeEnum("action_type").notNull().default("other"),
   urgency: gardenUrgencyEnum("urgency").notNull().default("someday"),
   status: gardenTaskStatusEnum("status").notNull().default("open"),
