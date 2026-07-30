@@ -5,7 +5,7 @@ import { plants, gardenTasks, maintenanceItems } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { parseBody, jsonError } from "@/lib/api-helpers";
 import { identifyPlant } from "@/lib/integrations/plantId";
-import { generateCareAdvice } from "@/lib/integrations/claude";
+import { generateCareAdvice, generatePlantIdentifier } from "@/lib/integrations/claude";
 import { IntegrationError } from "@/lib/integrations/errors";
 import { computeNextDue } from "@/app/api/maintenance/route";
 
@@ -40,6 +40,10 @@ export async function POST(request: Request) {
   }
 
   const needsConfirmation = identification.confidence < CONFIDENCE_THRESHOLD;
+  const identifyingFeature = await generatePlantIdentifier(
+    identification.commonName,
+    identification.species
+  ).catch(() => null);
 
   const plantValues = {
     commonName: identification.commonName,
@@ -47,6 +51,7 @@ export async function POST(request: Request) {
     referencePhotoUrl: body.data.photoUrl,
     isRealPhoto: true,
     firstIdentifiedAt: new Date(),
+    identifyingFeature,
   };
 
   const plant = body.data.plantId

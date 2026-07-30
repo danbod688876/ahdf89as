@@ -143,6 +143,48 @@ export async function classifyCapture(
   }
 }
 
+const identifierSchema = z.object({
+  identifier: z
+    .string()
+    .describe(
+      "One plain-language sentence describing the specific visual features to look for — leaf shape, color, texture, flower type/color, size, distinguishing marks. Written for someone with no gardening background matching this to what's actually in their yard, e.g. 'Look for glossy, dark green oval leaves speckled with cream or gold, sometimes with small red berries in winter.'"
+    ),
+});
+
+/**
+ * Generated alongside a plant's reference photo (both capture flows) so
+ * the thumbnail isn't the only way to recognize it — a short, concrete
+ * "what to look for" sentence rather than generic species trivia.
+ */
+export async function generatePlantIdentifier(plantName: string, context?: string | null): Promise<string> {
+  try {
+    const response = await client.messages.parse({
+      model: "claude-opus-5",
+      max_tokens: 256,
+      output_config: { effort: "low", format: zodOutputFormat(identifierSchema) },
+      messages: [
+        {
+          role: "user",
+          content: [
+            `Plant: "${plantName}"`,
+            context ? `Extra context: ${context}` : null,
+            "Give the single sentence described in the schema — concrete visual features only, not care instructions or trivia.",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        },
+      ],
+    });
+    if (!response.parsed_output) {
+      throw new IntegrationError("claude", "no parsed output returned");
+    }
+    return response.parsed_output.identifier;
+  } catch (err) {
+    if (err instanceof IntegrationError) throw err;
+    throw new IntegrationError("claude", "plant identifier generation failed", err);
+  }
+}
+
 /**
  * Photo capture flow (spec §2.7 step 4): species + zone + season + what's
  * visible in the photo -> specific, non-generic care actions.

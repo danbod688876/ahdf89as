@@ -173,6 +173,10 @@ export const plants = pgTable("plants", {
   locationTag: text("location_tag"),
   referencePhotoUrl: text("reference_photo_url"),
   isRealPhoto: boolean("is_real_photo").notNull().default(false),
+  // One plain-language sentence of what to visually look for (leaf shape,
+  // color, flowers) — generated alongside the photo so a non-gardener can
+  // match the row to the actual plant, not just recognize a thumbnail.
+  identifyingFeature: text("identifying_feature"),
   firstIdentifiedAt: timestamp("first_identified_at", { withTimezone: true }),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

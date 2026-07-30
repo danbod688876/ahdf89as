@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { plants, gardenTasks } from "@/lib/db/schema";
 import type { Plant } from "@/lib/db/schema";
-import { parseGardenCapture, type ParsedGardenTask } from "@/lib/integrations/claude";
+import { parseGardenCapture, generatePlantIdentifier, type ParsedGardenTask } from "@/lib/integrations/claude";
 import { fetchStockPhoto } from "@/lib/integrations/plantData";
 
 /**
@@ -29,7 +29,10 @@ export async function resolvePlantId(parsed: ParsedGardenTask, knownPlants: Plan
   const match = knownPlants.find((p) => namesMatch(parsed.plantName, p.commonName, p.nicknames ?? []));
   if (match) return match.id;
 
-  const stockPhoto = await fetchStockPhoto(parsed.plantName).catch(() => null);
+  const [stockPhoto, identifyingFeature] = await Promise.all([
+    fetchStockPhoto(parsed.plantName).catch(() => null),
+    generatePlantIdentifier(parsed.plantName, parsed.locationHint).catch(() => null),
+  ]);
   const [created] = await db
     .insert(plants)
     .values({
@@ -37,6 +40,7 @@ export async function resolvePlantId(parsed: ParsedGardenTask, knownPlants: Plan
       locationTag: parsed.locationHint ?? undefined,
       referencePhotoUrl: stockPhoto?.url,
       isRealPhoto: false,
+      identifyingFeature,
     })
     .returning();
 

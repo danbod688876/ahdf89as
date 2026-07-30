@@ -12,6 +12,7 @@ const updatePlantSchema = z.object({
   locationTag: z.string().nullable().optional(),
   referencePhotoUrl: z.string().url().optional(), // e.g. correcting a wrong plant ID (spec §2.7)
   isRealPhoto: z.boolean().optional(),
+  identifyingFeature: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
 });
 
