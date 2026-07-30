@@ -5,25 +5,27 @@ import { plants, gardenTasks, maintenanceItems } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { parseBody, jsonError } from "@/lib/api-helpers";
 import { identifyPlant } from "@/lib/integrations/plantId";
-import { generateCareAdvice, generatePlantIdentifier } from "@/lib/integrations/claude";
+import { generateCareAdvice, generatePlantIdentifier, currentSeason } from "@/lib/integrations/claude";
 import { IntegrationError } from "@/lib/integrations/errors";
 import { computeNextDue } from "@/app/api/maintenance/route";
+import { GARDEN_LOCATION, getWeatherForecast } from "@/lib/integrations/weather";
 
 const CONFIDENCE_THRESHOLD = 0.6;
 
 const photoRequestSchema = z.object({
   photoUrl: z.string().url(),
-  zone: z.string().min(1),
-  season: z.string().min(1),
   plantId: z.string().uuid().optional(), // set when re-identifying/correcting an existing plant
 });
 
 /**
  * Photo capture flow (spec §2.7): plant ID -> low-confidence flag for manual
- * correction -> zone/season-specific care advice -> save the real photo as
- * reference -> recurring actions become MaintenanceItem rows, one-offs
- * become GardenTasks. Falls back to a clear error (manual name entry) if the
- * ID service is down rather than blocking (§4.6).
+ * correction -> zone/season/forecast-specific care advice -> save the real
+ * photo as reference -> recurring actions become MaintenanceItem rows,
+ * one-offs become GardenTasks. Zone, season, and the current forecast are
+ * all derived here rather than trusted from the client — there's exactly
+ * one garden location for this app (spec §2.7/§5). Falls back to a clear
+ * error (manual name entry) if the ID service is down rather than
+ * blocking (§4.6).
  */
 export async function POST(request: Request) {
   const body = await parseBody(request, photoRequestSchema);
@@ -68,10 +70,12 @@ export async function POST(request: Request) {
 
   let careActions;
   try {
+    const weather = await getWeatherForecast();
     careActions = await generateCareAdvice({
       species: identification.species,
-      zone: body.data.zone,
-      season: body.data.season,
+      zone: `${GARDEN_LOCATION.name}, ${GARDEN_LOCATION.zone}`,
+      season: currentSeason(),
+      weather,
     });
   } catch (err) {
     if (err instanceof IntegrationError) {

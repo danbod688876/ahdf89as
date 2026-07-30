@@ -1,5 +1,10 @@
 // Default garden location — Campbell River, coastal BC (~8a/8b), per spec §2.7/§5.
-export const GARDEN_LOCATION = { lat: 50.0163, lon: -125.2461, name: "Campbell River, BC" };
+export const GARDEN_LOCATION = {
+  lat: 50.0163,
+  lon: -125.2461,
+  name: "Campbell River, BC",
+  zone: "coastal BC (~8a/8b)",
+};
 
 export type DayForecast = {
   date: string; // yyyy-mm-dd

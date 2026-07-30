@@ -3,6 +3,7 @@ import { ExpandableSection } from "@/components/ui/ExpandableSection";
 import { Badge } from "@/components/ui/Badge";
 import { CaptureBar } from "./CaptureBar";
 import { GardenTaskRow } from "./GardenTaskRow";
+import { PhotoCaptureButton } from "./PhotoCaptureButton";
 import { MaintenanceItemRow, type ItemWithLog } from "./MaintenanceItemRow";
 import { WeatherWidget } from "./WeatherWidget";
 import type { GardenTask, Plant } from "@/lib/db/schema";
@@ -36,6 +37,9 @@ export function GardenModule({
         }
       >
         <CaptureBar moduleHint="garden" />
+        <div className="mb-3 flex justify-end">
+          <PhotoCaptureButton />
+        </div>
         <WeatherWidget weather={weather} />
 
         <ul className="space-y-2">

@@ -2,16 +2,27 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { IntegrationError } from "./errors";
-import { GARDEN_LOCATION } from "./weather";
+import { GARDEN_LOCATION, type WeatherSummary } from "./weather";
 
 const client = new Anthropic();
 
-function currentSeason(): string {
+export function currentSeason(): string {
   const month = new Date().getMonth() + 1; // Northern hemisphere
   if ([12, 1, 2].includes(month)) return "winter";
   if ([3, 4, 5].includes(month)) return "spring";
   if ([6, 7, 8].includes(month)) return "summer";
   return "fall";
+}
+
+function forecastLine(weather: WeatherSummary | null | undefined): string | null {
+  if (!weather) return null;
+  const days = weather.days
+    .map(
+      (d) =>
+        `${d.date} ${d.condition} ${d.minTemp}–${d.maxTemp}°C, ${Math.round(d.precipitationChance * 100)}% chance rain`
+    )
+    .join("; ");
+  return `Forecast (${weather.location}): ${days}. ${weather.recommendation}`;
 }
 
 const capturedTaskSchema = z.object({
@@ -55,7 +66,7 @@ export async function parseGardenCapture(rawText: string): Promise<ParsedGardenT
           role: "user",
           content: [
             `She just flagged garden task(s) in passing: "${rawText}"`,
-            `Zone: ${GARDEN_LOCATION.name}, coastal BC (~8a/8b)`,
+            `Zone: ${GARDEN_LOCATION.name}, ${GARDEN_LOCATION.zone}`,
             `Season: ${currentSeason()}`,
           ].join("\n"),
         },
@@ -186,8 +197,11 @@ export async function generatePlantIdentifier(plantName: string, context?: strin
 }
 
 /**
- * Photo capture flow (spec §2.7 step 4): species + zone + season + what's
- * visible in the photo -> specific, non-generic care actions.
+ * Photo capture flow (spec §2.7 step 4): species + zone + season + current
+ * forecast + what's visible in the photo -> specific, non-generic care
+ * actions. Forecast is what makes this "right now" rather than generic
+ * species advice — e.g. holding off on watering because rain's expected,
+ * or flagging an incoming cold snap for a tender plant.
  */
 const careActionSchema = z.object({
   text: z.string().describe("The specific care action, e.g. 'prune again in 6 weeks'"),
@@ -209,6 +223,7 @@ export async function generateCareAdvice(input: {
   zone: string;
   season: string;
   photoNotes?: string;
+  weather?: WeatherSummary | null;
 }): Promise<CareAction[]> {
   const adviceSchema = z.object({ actions: z.array(careActionSchema) });
   try {
@@ -224,8 +239,9 @@ export async function generateCareAdvice(input: {
             `Zone: ${input.zone}`,
             `Season: ${input.season}`,
             input.photoNotes ? `Visible in photo: ${input.photoNotes}` : null,
+            forecastLine(input.weather),
             "",
-            "Give specific, non-generic care actions for this plant right now — not generic species advice. Include timing (e.g. 'prune again in 6 weeks') where relevant.",
+            "Give specific, non-generic care actions for this plant right now — not generic species advice. Include timing (e.g. 'prune again in 6 weeks') where relevant. Factor in the forecast above if given — e.g. hold off a one-off watering task if rain is coming, or flag protection needed for an incoming cold snap or heat spike — rather than ignoring it.",
           ]
             .filter(Boolean)
             .join("\n"),
