@@ -1,6 +1,6 @@
 import { asc, eq, gte } from "drizzle-orm";
 import { db } from "./index";
-import { events, goals, reminders, trips, maintenanceItems, gardenTasks } from "./schema";
+import { events, goals, reminders, trips, maintenanceItems, gardenTasks, householdTasks } from "./schema";
 
 /**
  * Read-side data access for the dashboard page. Kept as small, named
@@ -56,4 +56,11 @@ export async function getGardenTasks(status: "open" | "done" = "open") {
 
 export async function getPlants() {
   return db.query.plants.findMany();
+}
+
+export async function getHouseholdTasks(status: "open" | "done" = "open") {
+  return db.query.householdTasks.findMany({
+    where: eq(householdTasks.status, status),
+    orderBy: asc(householdTasks.createdAt),
+  });
 }

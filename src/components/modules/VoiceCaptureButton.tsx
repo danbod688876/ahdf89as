@@ -1,43 +1,10 @@
 "use client";
 
-import { useState, useRef, useSyncExternalStore } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Sprout, Mic, MicOff, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-// Minimal shape of the Web Speech API this component uses — not in lib.dom.d.ts.
-interface SpeechRecognitionResultLike {
-  results: { [index: number]: { [index: number]: { transcript: string } } };
-}
-interface SpeechRecognitionLike extends EventTarget {
-  continuous: boolean;
-  interimResults: boolean;
-  start(): void;
-  stop(): void;
-  onresult: ((event: SpeechRecognitionResultLike) => void) | null;
-  onend: (() => void) | null;
-}
-
-function getSpeechRecognitionCtor(): (new () => SpeechRecognitionLike) | undefined {
-  if (typeof window === "undefined") return undefined;
-  return (
-    (window as unknown as { SpeechRecognition?: new () => SpeechRecognitionLike })
-      .SpeechRecognition ??
-    (window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognitionLike })
-      .webkitSpeechRecognition
-  );
-}
-
-const noopSubscribe = () => () => {};
-
-/** Hydration-safe: server always sees "unsupported", client checks once on mount. */
-function useSpeechSupported() {
-  return useSyncExternalStore(
-    noopSubscribe,
-    () => !!getSpeechRecognitionCtor(),
-    () => false
-  );
-}
+import { useSpeechInput } from "@/lib/hooks/useSpeechInput";
 
 /**
  * Persistent, low-friction capture entry point — she's often outside with
@@ -48,33 +15,11 @@ export function VoiceCaptureButton({ className }: { className?: string }) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [text, setText] = useState("");
-  const [isListening, setIsListening] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const speechSupported = useSpeechSupported();
-
-  function toggleListening() {
-    const SpeechRecognition = getSpeechRecognitionCtor();
-    if (!SpeechRecognition) return;
-
-    if (isListening) {
-      recognitionRef.current?.stop();
-      return;
-    }
-
-    const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      setText((prev) => (prev ? `${prev} ${transcript}` : transcript));
-    };
-    recognition.onend = () => setIsListening(false);
-    recognitionRef.current = recognition;
-    recognition.start();
-    setIsListening(true);
-  }
+  const { supported: speechSupported, isListening, toggleListening } = useSpeechInput((transcript) =>
+    setText((prev) => (prev ? `${prev} ${transcript}` : transcript))
+  );
 
   async function handleSubmit() {
     const rawText = text.trim();

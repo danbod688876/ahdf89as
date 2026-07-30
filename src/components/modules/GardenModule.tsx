@@ -1,6 +1,7 @@
 import { Sprout } from "lucide-react";
 import { ExpandableSection } from "@/components/ui/ExpandableSection";
 import { Badge } from "@/components/ui/Badge";
+import { CaptureBar } from "./CaptureBar";
 import { GardenTaskRow } from "./GardenTaskRow";
 import { MaintenanceItemRow, type ItemWithLog } from "./MaintenanceItemRow";
 import { WeatherWidget } from "./WeatherWidget";
@@ -34,6 +35,7 @@ export function GardenModule({
           )
         }
       >
+        <CaptureBar moduleHint="garden" />
         <WeatherWidget weather={weather} />
 
         <ul className="space-y-2">

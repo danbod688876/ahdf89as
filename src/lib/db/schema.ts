@@ -41,6 +41,8 @@ export const gardenActionTypeEnum = pgEnum("garden_action_type", [
 ]);
 export const gardenUrgencyEnum = pgEnum("garden_urgency", ["today", "this_week", "someday"]);
 export const gardenTaskStatusEnum = pgEnum("garden_task_status", ["open", "done"]);
+export const householdTaskAssetTypeEnum = pgEnum("household_task_asset_type", ["home", "vehicle"]);
+export const householdTaskStatusEnum = pgEnum("household_task_status", ["open", "done"]);
 
 // ---------- User ----------
 
@@ -189,6 +191,22 @@ export const gardenTasks = pgTable("garden_tasks", {
   completedAt: timestamp("completed_at", { withTimezone: true }),
 });
 
+// One-off home/vehicle tasks captured via the universal capture bar — the
+// same shape as garden_tasks, minus the plant relation (home/vehicle assets
+// aren't tracked as their own rows the way plants are).
+export const householdTasks = pgTable("household_tasks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  assetType: householdTaskAssetTypeEnum("asset_type").notNull(),
+  assetReference: text("asset_reference"), // the appliance/vehicle as said in plain text, e.g. "the Forester"
+  action: text("action").notNull(),
+  dueHint: text("due_hint"), // free-text timing only when actually implied, e.g. "before winter"
+  rawText: text("raw_text").notNull(),
+  status: householdTaskStatusEnum("status").notNull().default("open"),
+  createdBy: uuid("created_by").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+});
+
 // ---------- Relations ----------
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -231,6 +249,10 @@ export const gardenTasksRelations = relations(gardenTasks, ({ one }) => ({
   creator: one(users, { fields: [gardenTasks.createdBy], references: [users.id] }),
 }));
 
+export const householdTasksRelations = relations(householdTasks, ({ one }) => ({
+  creator: one(users, { fields: [householdTasks.createdBy], references: [users.id] }),
+}));
+
 // ---------- Row types ----------
 
 export type User = typeof users.$inferSelect;
@@ -244,3 +266,4 @@ export type MaintenanceItem = typeof maintenanceItems.$inferSelect;
 export type MaintenanceLogEntry = typeof maintenanceLog.$inferSelect;
 export type Plant = typeof plants.$inferSelect;
 export type GardenTask = typeof gardenTasks.$inferSelect;
+export type HouseholdTask = typeof householdTasks.$inferSelect;

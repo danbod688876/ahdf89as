@@ -6,9 +6,11 @@ import {
   getTrips,
   getMaintenanceItems,
   getGardenTasks,
+  getHouseholdTasks,
   getPlants,
 } from "@/lib/db/queries";
 import { CalendarModule } from "@/components/modules/CalendarModule";
+import { CaptureBar } from "@/components/modules/CaptureBar";
 import { GoalsModule } from "@/components/modules/GoalsModule";
 import { RemindersModule } from "@/components/modules/RemindersModule";
 import { TripsModule } from "@/components/modules/TripsModule";
@@ -21,7 +23,7 @@ import { getWeatherForecast } from "@/lib/integrations/weather";
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const [events, users, goals, reminders, trips, maintenanceItems, gardenTasks, plants, weather] =
+  const [events, users, goals, reminders, trips, maintenanceItems, gardenTasks, householdTasks, plants, weather] =
     await Promise.all([
       getUpcomingEvents(),
       getUsers(),
@@ -30,6 +32,7 @@ export default async function DashboardPage() {
       getTrips(),
       getMaintenanceItems(),
       getGardenTasks("open"),
+      getHouseholdTasks("open"),
       getPlants(),
       getWeatherForecast(),
     ]);
@@ -42,10 +45,12 @@ export default async function DashboardPage() {
       <header className="mb-6 flex items-start justify-between gap-4">
         <div>
           <p className="font-serif text-3xl text-ink">Pig Manor</p>
-          <p className="text-sm text-sage">Everything you&rsquo;re both keeping track of, in one place.</p>
+          <p className="text-sm text-sage">Reducing the pig family mental load</p>
         </div>
         <AuthControls />
       </header>
+
+      <CaptureBar variant="full" />
 
       <div className="space-y-5">
         <GardenModule
@@ -55,7 +60,7 @@ export default async function DashboardPage() {
           weather={weather}
         />
         <CalendarModule events={events} users={users} />
-        <MaintenanceModule items={homeVehicleItems} />
+        <MaintenanceModule items={homeVehicleItems} householdTasks={householdTasks} />
       </div>
 
       <section className="mt-10">

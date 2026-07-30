@@ -71,6 +71,78 @@ export async function parseGardenCapture(rawText: string): Promise<ParsedGardenT
   }
 }
 
+const recurrenceGuessSchema = z
+  .object({
+    interval: z.number().int().positive().describe("How many of the unit, e.g. 3 for 'every 3 months'"),
+    unit: z.enum(["days", "weeks", "months"]),
+  })
+  .nullable()
+  .describe(
+    "Set only when the text genuinely implies a repeating schedule (e.g. 'every 3 months', 'twice a week' -> 1 week). Otherwise null — don't invent a schedule that isn't there."
+  );
+
+const captureClassificationSchema = z.object({
+  module: z
+    .enum(["garden", "home", "vehicle", "uncertain"])
+    .describe(
+      "garden = plant/yard language; home = furnace/gutter/appliance/house language; vehicle = car/tire/oil/registration language. Use 'uncertain' only if genuinely ambiguous."
+    ),
+  assetReference: z
+    .string()
+    .nullable()
+    .describe("The plant, appliance, or vehicle mentioned, in plain text as said — null if nothing specific is named."),
+  action: z.string().describe("Short plain-language description of what needs doing, e.g. 'oil change', 'check gutters'."),
+  dueHint: z
+    .string()
+    .nullable()
+    .describe("Free-text timing only if actually implied by the text, e.g. 'next week', 'before winter' — null otherwise."),
+  recurrence: recurrenceGuessSchema,
+});
+
+export type CaptureClassification = z.infer<typeof captureClassificationSchema>;
+
+/**
+ * Universal capture bar's routing step: one freeform sentence -> which
+ * module it belongs to, plain-language fields for a one-off task, and a
+ * best-guess recurrence if the text implies a repeating schedule. Reuses
+ * the same structured-output pattern as parseGardenCapture rather than a
+ * bespoke parser per module.
+ *
+ * moduleHint is set when captured from inside a specific module's own card
+ * (the user looking at that card is the explicit signal) — classification
+ * is skipped and Claude just extracts fields for that fixed module.
+ */
+export async function classifyCapture(
+  rawText: string,
+  moduleHint?: "garden" | "home" | "vehicle"
+): Promise<CaptureClassification> {
+  try {
+    const response = await client.messages.parse({
+      model: "claude-opus-5",
+      max_tokens: 1024,
+      output_config: { effort: "low", format: zodOutputFormat(captureClassificationSchema) },
+      messages: [
+        {
+          role: "user",
+          content: [
+            moduleHint
+              ? `This was captured from the "${moduleHint}" card, so it definitely belongs to that module — just extract the fields, don't second-guess the module.`
+              : "Classify which household module this task belongs to and extract its fields.",
+            `Text: "${rawText}"`,
+          ].join("\n"),
+        },
+      ],
+    });
+    if (!response.parsed_output) {
+      throw new IntegrationError("claude", "no parsed output returned");
+    }
+    return moduleHint ? { ...response.parsed_output, module: moduleHint } : response.parsed_output;
+  } catch (err) {
+    if (err instanceof IntegrationError) throw err;
+    throw new IntegrationError("claude", "capture classification failed", err);
+  }
+}
+
 /**
  * Photo capture flow (spec §2.7 step 4): species + zone + season + what's
  * visible in the photo -> specific, non-generic care actions.
