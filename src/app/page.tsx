@@ -13,7 +13,8 @@ import { GoalsModule } from "@/components/modules/GoalsModule";
 import { RemindersModule } from "@/components/modules/RemindersModule";
 import { TripsModule } from "@/components/modules/TripsModule";
 import { MaintenanceModule } from "@/components/modules/MaintenanceModule";
-import { GardenModule, VoiceCaptureButton } from "@/components/modules/GardenModule";
+import { GardenModule } from "@/components/modules/GardenModule";
+import { VoiceCaptureButton } from "@/components/modules/VoiceCaptureButton";
 import { AuthControls } from "@/components/ui/AuthControls";
 
 export const dynamic = "force-dynamic";

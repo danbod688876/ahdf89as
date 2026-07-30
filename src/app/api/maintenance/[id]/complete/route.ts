@@ -9,6 +9,7 @@ import { computeNextDue } from "@/app/api/maintenance/route";
 const completeSchema = z.object({
   completedAt: z.string().date(),
   mileageAt: z.number().int().optional(),
+  cost: z.string().optional(), // numeric columns take/return strings
   note: z.string().optional(),
 });
 

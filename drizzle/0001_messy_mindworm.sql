@@ -1,0 +1,1 @@
+ALTER TABLE "maintenance_log" ADD COLUMN "cost" numeric(10, 2);

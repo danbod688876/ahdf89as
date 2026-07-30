@@ -1,7 +1,6 @@
 import { Sprout, Droplet, Scissors, Leaf, Eye, HelpCircle } from "lucide-react";
 import { ExpandableSection } from "@/components/ui/ExpandableSection";
 import { Badge } from "@/components/ui/Badge";
-import { cn } from "@/lib/utils";
 import type { GardenTask, Plant } from "@/lib/db/schema";
 
 const ACTION_ICON: Record<GardenTask["actionType"], typeof Droplet> = {
@@ -77,27 +76,5 @@ export function GardenModule({
         </ul>
       </ExpandableSection>
     </div>
-  );
-}
-
-/**
- * Persistent, low-friction capture entry point — she's often outside with
- * hands full, so voice capture can't be buried a level deep (spec §5).
- * Fixed to the viewport, independent of the Garden module's expand state.
- */
-export function VoiceCaptureButton({ className }: { className?: string }) {
-  return (
-    <button
-      type="button"
-      className={cn(
-        "fixed bottom-6 right-6 z-20 flex items-center gap-2 rounded-full bg-pine px-5 py-3.5",
-        "text-sm font-medium text-white shadow-lg shadow-pine/25 transition-transform hover:scale-105",
-        className
-      )}
-      aria-label="Capture a garden task by voice"
-    >
-      <Sprout className="size-4" />
-      Tell the garden
-    </button>
   );
 }

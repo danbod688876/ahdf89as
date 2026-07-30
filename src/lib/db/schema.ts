@@ -156,6 +156,7 @@ export const maintenanceLog = pgTable("maintenance_log", {
     .references(() => maintenanceItems.id, { onDelete: "cascade" }),
   completedAt: date("completed_at").notNull(),
   mileageAt: integer("mileage_at"),
+  cost: numeric("cost", { precision: 10, scale: 2 }),
   note: text("note"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
