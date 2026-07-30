@@ -9,6 +9,8 @@ const updateTaskSchema = z.object({
   status: z.enum(["open", "done"]).optional(),
   urgency: z.enum(["today", "this_week", "someday"]).optional(),
   plantId: z.string().uuid().nullable().optional(),
+  rawText: z.string().min(1).optional(),
+  actionType: z.enum(["water", "prune", "fertilize", "watch", "other"]).optional(),
 });
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {

@@ -1,54 +1,22 @@
-import { Sprout, Droplet, Scissors, Leaf, Eye, HelpCircle } from "lucide-react";
+import { Sprout } from "lucide-react";
 import { ExpandableSection } from "@/components/ui/ExpandableSection";
 import { Badge } from "@/components/ui/Badge";
+import { GardenTaskRow } from "./GardenTaskRow";
+import { MaintenanceItemRow, type ItemWithLog } from "./MaintenanceItemRow";
+import { WeatherWidget } from "./WeatherWidget";
 import type { GardenTask, Plant } from "@/lib/db/schema";
-
-const ACTION_ICON: Record<GardenTask["actionType"], typeof Droplet> = {
-  water: Droplet,
-  prune: Scissors,
-  fertilize: Leaf,
-  watch: Eye,
-  other: HelpCircle,
-};
-
-function TaskRow({ task }: { task: GardenTask & { plant: Plant | null } }) {
-  const Icon = ACTION_ICON[task.actionType];
-  return (
-    <li className="flex items-center gap-3 rounded-lg bg-pine/5 px-2.5 py-2">
-      <div className="relative size-9 shrink-0 overflow-hidden rounded-full bg-sage/15">
-        {task.plant?.referencePhotoUrl && (
-          // Reference photos come from third-party plant APIs / user uploads with
-          // unpredictable hosts, so next/image's remote-pattern allowlist isn't a
-          // fit here — a plain <img> renders any origin without config.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={task.plant.referencePhotoUrl}
-            alt={task.plant.commonName}
-            className="absolute inset-0 size-full object-cover"
-          />
-        )}
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm text-ink">
-          {task.plant?.commonName ?? "Unidentified plant"}
-        </p>
-        <p className="flex items-center gap-1 text-xs text-sage">
-          <Icon className="size-3" /> {task.rawText}
-        </p>
-      </div>
-      <Badge tone={task.urgency === "today" ? "sand" : task.urgency === "this_week" ? "pine" : "sage"}>
-        {task.urgency.replace("_", " ")}
-      </Badge>
-    </li>
-  );
-}
+import type { WeatherSummary } from "@/lib/integrations/weather";
 
 export function GardenModule({
   tasks,
+  recurringItems,
   plantCount,
+  weather,
 }: {
   tasks: (GardenTask & { plant: Plant | null })[];
+  recurringItems: ItemWithLog[];
   plantCount: number;
+  weather: WeatherSummary | null;
 }) {
   const todayTasks = tasks.filter((t) => t.urgency === "today");
 
@@ -66,14 +34,29 @@ export function GardenModule({
           )
         }
       >
+        <WeatherWidget weather={weather} />
+
         <ul className="space-y-2">
           {tasks.map((t) => (
-            <TaskRow key={t.id} task={t} />
+            <GardenTaskRow key={t.id} task={t} />
           ))}
-          {tasks.length === 0 && (
+          {tasks.length === 0 && recurringItems.length === 0 && (
             <p className="text-sm text-sage">No open garden tasks — inventory has {plantCount} plants.</p>
           )}
         </ul>
+
+        {recurringItems.length > 0 && (
+          <div className="mt-4">
+            <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-sage">
+              Recurring care
+            </p>
+            <ul className="space-y-1.5">
+              {recurringItems.map((item) => (
+                <MaintenanceItemRow key={item.id} item={item} />
+              ))}
+            </ul>
+          </div>
+        )}
       </ExpandableSection>
     </div>
   );

@@ -16,11 +16,12 @@ import { MaintenanceModule } from "@/components/modules/MaintenanceModule";
 import { GardenModule } from "@/components/modules/GardenModule";
 import { VoiceCaptureButton } from "@/components/modules/VoiceCaptureButton";
 import { AuthControls } from "@/components/ui/AuthControls";
+import { getWeatherForecast } from "@/lib/integrations/weather";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const [events, users, goals, reminders, trips, maintenanceItems, gardenTasks, plants] =
+  const [events, users, goals, reminders, trips, maintenanceItems, gardenTasks, plants, weather] =
     await Promise.all([
       getUpcomingEvents(),
       getUsers(),
@@ -30,9 +31,11 @@ export default async function DashboardPage() {
       getMaintenanceItems(),
       getGardenTasks("open"),
       getPlants(),
+      getWeatherForecast(),
     ]);
 
   const homeVehicleItems = maintenanceItems.filter((i) => i.assetType !== "garden");
+  const gardenRecurringItems = maintenanceItems.filter((i) => i.assetType === "garden");
 
   return (
     <main className="mx-auto w-full max-w-7xl flex-1 px-6 py-8">
@@ -49,7 +52,12 @@ export default async function DashboardPage() {
           <CalendarModule events={events} users={users} />
           <TripsModule trips={trips} />
           <MaintenanceModule items={homeVehicleItems} />
-          <GardenModule tasks={gardenTasks} plantCount={plants.length} />
+          <GardenModule
+            tasks={gardenTasks}
+            recurringItems={gardenRecurringItems}
+            plantCount={plants.length}
+            weather={weather}
+          />
         </div>
         <div className="space-y-5">
           <GoalsModule goals={goals} />
