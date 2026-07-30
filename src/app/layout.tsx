@@ -15,7 +15,7 @@ const fraunces = Fraunces({
 });
 
 export const metadata: Metadata = {
-  title: "Household Dashboard",
+  title: "Pig Manor",
   description: "A shared view of the calendar, goals, reminders, trips, maintenance, and garden.",
 };
 

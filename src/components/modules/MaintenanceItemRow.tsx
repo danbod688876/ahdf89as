@@ -36,6 +36,10 @@ export function MaintenanceItemRow({ item }: { item: ItemWithLog }) {
   const cost = lastCost(item);
   const history = [...item.log].sort((a, b) => b.completedAt.localeCompare(a.completedAt));
   const showMileage = item.assetType === "vehicle";
+  // Garden reminders are just "did I do it" — no cost/note tracking, unlike
+  // vehicle service or home repairs.
+  const showCostAndNote = item.assetType !== "garden";
+  const logFieldCount = 1 + (showMileage ? 1 : 0) + (showCostAndNote ? 2 : 0);
 
   async function saveItem() {
     setIsSaving(true);
@@ -95,7 +99,7 @@ export function MaintenanceItemRow({ item }: { item: ItemWithLog }) {
             {item.lastDone
               ? `Last done ${format(new Date(item.lastDone), "MMM d, yyyy")}`
               : "Not logged yet"}
-            {cost !== null && ` · ${currency(cost)}`}
+            {showCostAndNote && cost !== null && ` · ${currency(cost)}`}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -162,7 +166,12 @@ export function MaintenanceItemRow({ item }: { item: ItemWithLog }) {
           {/* Log a service */}
           <div className="rounded-lg border border-sage/20 bg-white/60 p-2.5">
             <p className="text-xs font-medium text-ink">Log a completion</p>
-            <div className={cn("mt-1.5 grid grid-cols-2 gap-1.5", showMileage ? "sm:grid-cols-4" : "sm:grid-cols-3")}>
+            <div
+              className={cn(
+                "mt-1.5 grid grid-cols-2 gap-1.5",
+                logFieldCount >= 4 ? "sm:grid-cols-4" : logFieldCount === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2"
+              )}
+            >
               <input
                 type="date"
                 value={logDate}
@@ -178,20 +187,24 @@ export function MaintenanceItemRow({ item }: { item: ItemWithLog }) {
                   className="rounded-lg border border-sage/30 bg-white px-2 py-1 text-xs text-ink"
                 />
               )}
-              <input
-                type="number"
-                step="0.01"
-                placeholder="Cost $"
-                value={logCost}
-                onChange={(e) => setLogCost(e.target.value)}
-                className="rounded-lg border border-sage/30 bg-white px-2 py-1 text-xs text-ink"
-              />
-              <input
-                placeholder="Note (optional)"
-                value={logNote}
-                onChange={(e) => setLogNote(e.target.value)}
-                className="rounded-lg border border-sage/30 bg-white px-2 py-1 text-xs text-ink"
-              />
+              {showCostAndNote && (
+                <>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="Cost $"
+                    value={logCost}
+                    onChange={(e) => setLogCost(e.target.value)}
+                    className="rounded-lg border border-sage/30 bg-white px-2 py-1 text-xs text-ink"
+                  />
+                  <input
+                    placeholder="Note (optional)"
+                    value={logNote}
+                    onChange={(e) => setLogNote(e.target.value)}
+                    className="rounded-lg border border-sage/30 bg-white px-2 py-1 text-xs text-ink"
+                  />
+                </>
+              )}
             </div>
             <button
               type="button"
