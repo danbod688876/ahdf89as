@@ -3,14 +3,7 @@
 import { useState } from "react";
 import { Maximize2, X } from "lucide-react";
 import type { Plant } from "@/lib/db/schema";
-
-/** The AI-generated "what to look for" sentence is the whole point of this
- * component — far more useful for matching a row to the actual plant than
- * a species name. Species/location tag are just fallbacks for older rows
- * that predate it. */
-export function plantIdentityLine(plant: Plant | null | undefined): string | null {
-  return plant?.identifyingFeature ?? plant?.species ?? plant?.locationTag ?? null;
-}
+import { plantIdentityLine } from "@/lib/utils";
 
 /**
  * Large enough to actually recognize the plant by, not just decorate the

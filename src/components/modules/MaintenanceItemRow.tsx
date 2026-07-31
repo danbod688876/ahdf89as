@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { ChevronDown, Pencil, X } from "lucide-react";
 import { differenceInCalendarDays, format } from "date-fns";
 import { Badge } from "@/components/ui/Badge";
-import { cn, currency } from "@/lib/utils";
-import { PlantThumbnail, plantIdentityLine } from "./PlantThumbnail";
+import { cn, currency, plantIdentityLine } from "@/lib/utils";
+import { PlantThumbnail } from "./PlantThumbnail";
 import type { MaintenanceItem, MaintenanceLogEntry, Plant } from "@/lib/db/schema";
 
 export type ItemWithLog = MaintenanceItem & { log: MaintenanceLogEntry[]; plant?: Plant | null };
@@ -107,6 +107,7 @@ export function MaintenanceItemRow({ item }: { item: ItemWithLog }) {
                 : "Not logged yet"}
               {showCostAndNote && cost !== null && ` · ${currency(cost)}`}
             </p>
+            {item.weatherNote && <p className="text-xs italic text-sage">☔ {item.weatherNote}</p>}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">

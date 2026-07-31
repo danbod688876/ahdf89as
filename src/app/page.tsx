@@ -1,47 +1,29 @@
-import {
-  getUpcomingEvents,
-  getUsers,
-  getGoals,
-  getReminders,
-  getTrips,
-  getMaintenanceItems,
-  getGardenTasks,
-  getHouseholdTasks,
-  getPlants,
-} from "@/lib/db/queries";
-import { CalendarModule } from "@/components/modules/CalendarModule";
-import { CaptureBar } from "@/components/modules/CaptureBar";
-import { GoalsModule } from "@/components/modules/GoalsModule";
-import { RemindersModule } from "@/components/modules/RemindersModule";
-import { TripsModule } from "@/components/modules/TripsModule";
-import { MaintenanceModule } from "@/components/modules/MaintenanceModule";
+import { getMaintenanceItems, getGardenTasks, getPlants } from "@/lib/db/queries";
 import { GardenModule } from "@/components/modules/GardenModule";
 import { VoiceCaptureButton } from "@/components/modules/VoiceCaptureButton";
 import { AuthControls } from "@/components/ui/AuthControls";
 import { getWeatherForecast } from "@/lib/integrations/weather";
+import { reconcileGardenSchedule } from "@/lib/garden";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const [events, users, goals, reminders, trips, maintenanceItems, gardenTasks, householdTasks, plants, weather] =
-    await Promise.all([
-      getUpcomingEvents(),
-      getUsers(),
-      getGoals(),
-      getReminders(),
-      getTrips(),
-      getMaintenanceItems(),
-      getGardenTasks("open"),
-      getHouseholdTasks("open"),
-      getPlants(),
-      getWeatherForecast(),
-    ]);
+  // Surfaces whatever this season's care plans call for and weather-adjusts
+  // due watering items before reading anything back, so the load below
+  // always reflects the current state rather than yesterday's.
+  await reconcileGardenSchedule();
 
-  const homeVehicleItems = maintenanceItems.filter((i) => i.assetType !== "garden");
+  const [maintenanceItems, gardenTasks, plants, weather] = await Promise.all([
+    getMaintenanceItems(),
+    getGardenTasks("open"),
+    getPlants(),
+    getWeatherForecast(),
+  ]);
+
   const gardenRecurringItems = maintenanceItems.filter((i) => i.assetType === "garden");
 
   return (
-    <main className="mx-auto w-full max-w-7xl flex-1 px-6 py-8">
+    <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-8">
       <header className="mb-6 flex items-start justify-between gap-4">
         <div>
           <p className="font-serif text-3xl text-ink">Pig Manor</p>
@@ -50,31 +32,12 @@ export default async function DashboardPage() {
         <AuthControls />
       </header>
 
-      <CaptureBar variant="full" />
-
-      <div className="space-y-5">
-        <GardenModule
-          tasks={gardenTasks}
-          recurringItems={gardenRecurringItems}
-          plantCount={plants.length}
-          weather={weather}
-        />
-        <CalendarModule events={events} users={users} />
-        <MaintenanceModule items={homeVehicleItems} householdTasks={householdTasks} />
-      </div>
-
-      <section className="mt-10">
-        <p className="mb-4 font-serif text-2xl text-ink">In Development</p>
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[2fr_1fr]">
-          <div className="space-y-5">
-            <TripsModule trips={trips} />
-          </div>
-          <div className="space-y-5">
-            <GoalsModule goals={goals} />
-            <RemindersModule reminders={reminders} />
-          </div>
-        </div>
-      </section>
+      <GardenModule
+        tasks={gardenTasks}
+        recurringItems={gardenRecurringItems}
+        plants={plants}
+        weather={weather}
+      />
 
       <VoiceCaptureButton />
     </main>

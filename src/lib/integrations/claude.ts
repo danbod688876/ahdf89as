@@ -6,7 +6,7 @@ import { GARDEN_LOCATION, type WeatherSummary } from "./weather";
 
 const client = new Anthropic();
 
-export function currentSeason(): string {
+export function currentSeason(): "winter" | "spring" | "summer" | "fall" {
   const month = new Date().getMonth() + 1; // Northern hemisphere
   if ([12, 1, 2].includes(month)) return "winter";
   if ([3, 4, 5].includes(month)) return "spring";
@@ -197,51 +197,72 @@ export async function generatePlantIdentifier(plantName: string, context?: strin
 }
 
 /**
- * Photo capture flow (spec §2.7 step 4): species + zone + season + current
- * forecast + what's visible in the photo -> specific, non-generic care
- * actions. Forecast is what makes this "right now" rather than generic
- * species advice — e.g. holding off on watering because rain's expected,
- * or flagging an incoming cold snap for a tender plant.
+ * Photo capture flow: species + zone + what's visible in the photo ->
+ * a full year-round care plan, one entry per season, generated once
+ * rather than only "right now" — so the plant's task list builds itself
+ * as each season arrives instead of requiring a fresh photo every visit.
+ * The current forecast (when given) only informs the season actually
+ * happening now; the other three reflect typical conditions for the zone.
  */
-const careActionSchema = z.object({
-  text: z.string().describe("The specific care action, e.g. 'prune again in 6 weeks'"),
+const seasonalActionSchema = z.object({
+  careKey: z
+    .string()
+    .describe(
+      "Short, stable snake_case key grouping this action across seasons, e.g. 'watering', 'pruning', 'fertilizing'. Reuse the SAME key across season entries for the same conceptual recurring action so its cadence can be updated as seasons change rather than treated as a brand new task each time."
+    ),
+  action: z.string().describe("The specific care action for this season, e.g. 'Water deeply twice a week during hot spells'"),
   type: z
     .enum(["recurring", "one_off"])
-    .describe("recurring -> becomes a MaintenanceItem; one_off -> a one-time GardenTask"),
+    .describe("recurring -> an ongoing reminder for this season; one_off -> a single task when the season starts"),
   intervalDays: z
     .number()
     .int()
     .positive()
     .nullable()
-    .describe("Only set when type is recurring"),
+    .describe("Only set when type is recurring — how often to repeat during this season"),
+  isWatering: z
+    .boolean()
+    .describe("True if this action is specifically about watering — used to automatically factor in the weather forecast"),
 });
 
-export type CareAction = z.infer<typeof careActionSchema>;
+const seasonalPlanSchema = z.object({
+  seasons: z
+    .array(
+      z.object({
+        season: z.enum(["winter", "spring", "summer", "fall"]),
+        actions: z.array(seasonalActionSchema),
+      })
+    )
+    .length(4)
+    .describe("Exactly one entry per season covering the full year — an empty actions array is fine for a dormant season."),
+});
 
-export async function generateCareAdvice(input: {
+export type SeasonalCareAction = z.infer<typeof seasonalActionSchema>;
+export type SeasonalCarePlan = z.infer<typeof seasonalPlanSchema>["seasons"];
+
+export async function generateSeasonalCarePlan(input: {
   species: string;
   zone: string;
-  season: string;
+  currentSeason: string;
   photoNotes?: string;
   weather?: WeatherSummary | null;
-}): Promise<CareAction[]> {
-  const adviceSchema = z.object({ actions: z.array(careActionSchema) });
+}): Promise<SeasonalCarePlan> {
   try {
     const response = await client.messages.parse({
       model: "claude-opus-5",
-      max_tokens: 2048,
-      output_config: { effort: "medium", format: zodOutputFormat(adviceSchema) },
+      max_tokens: 3072,
+      output_config: { effort: "medium", format: zodOutputFormat(seasonalPlanSchema) },
       messages: [
         {
           role: "user",
           content: [
             `Species: ${input.species}`,
             `Zone: ${input.zone}`,
-            `Season: ${input.season}`,
+            `Current season: ${input.currentSeason}`,
             input.photoNotes ? `Visible in photo: ${input.photoNotes}` : null,
             forecastLine(input.weather),
             "",
-            "Give specific, non-generic care actions for this plant right now — not generic species advice. Include timing (e.g. 'prune again in 6 weeks') where relevant. Factor in the forecast above if given — e.g. hold off a one-off watering task if rain is coming, or flag protection needed for an incoming cold snap or heat spike — rather than ignoring it.",
+            "Build this plant's full year-round care plan, one entry per season — not just what to do right now. For each season, give specific, non-generic actions (watering cadence, pruning/fertilizing timing, protection needed) rather than generic species trivia. Use the forecast above, if given, only to inform right-now details for the current season; the other three should reflect typical conditions for the zone.",
           ]
             .filter(Boolean)
             .join("\n"),
@@ -251,9 +272,9 @@ export async function generateCareAdvice(input: {
     if (!response.parsed_output) {
       throw new IntegrationError("claude", "no parsed output returned");
     }
-    return response.parsed_output.actions;
+    return response.parsed_output.seasons;
   } catch (err) {
     if (err instanceof IntegrationError) throw err;
-    throw new IntegrationError("claude", "care advice generation failed", err);
+    throw new IntegrationError("claude", "seasonal care plan generation failed", err);
   }
 }

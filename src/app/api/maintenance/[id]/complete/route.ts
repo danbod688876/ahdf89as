@@ -31,6 +31,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       lastDone: body.data.completedAt,
       lastDoneMileage: body.data.mileageAt,
       nextDue: computeNextDue(body.data.completedAt, item.intervalDays ?? undefined),
+      // Clear any weather-pushed note from the last cycle — it doesn't
+      // apply to the freshly computed due date.
+      weatherNote: null,
     })
     .where(eq(maintenanceItems.id, id))
     .returning();

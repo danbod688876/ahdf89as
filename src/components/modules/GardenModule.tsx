@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/Badge";
 import { CaptureBar } from "./CaptureBar";
 import { GardenTaskRow } from "./GardenTaskRow";
 import { PhotoCaptureButton } from "./PhotoCaptureButton";
+import { PlantLibrary } from "./PlantLibrary";
 import { MaintenanceItemRow, type ItemWithLog } from "./MaintenanceItemRow";
 import { WeatherWidget } from "./WeatherWidget";
 import type { GardenTask, Plant } from "@/lib/db/schema";
@@ -12,12 +13,12 @@ import type { WeatherSummary } from "@/lib/integrations/weather";
 export function GardenModule({
   tasks,
   recurringItems,
-  plantCount,
+  plants,
   weather,
 }: {
   tasks: (GardenTask & { plant: Plant | null })[];
   recurringItems: ItemWithLog[];
-  plantCount: number;
+  plants: Plant[];
   weather: WeatherSummary | null;
 }) {
   const todayTasks = tasks.filter((t) => t.urgency === "today");
@@ -27,12 +28,12 @@ export function GardenModule({
       <ExpandableSection
         title="Garden"
         icon={<Sprout className="size-4" />}
-        defaultOpen={todayTasks.length > 0}
+        defaultOpen
         badge={
           todayTasks.length > 0 ? (
             <Badge tone="sand">{todayTasks.length} today</Badge>
           ) : (
-            <Badge tone="sage">{plantCount} plants</Badge>
+            <Badge tone="sage">{plants.length} plants</Badge>
           )
         }
       >
@@ -47,7 +48,7 @@ export function GardenModule({
             <GardenTaskRow key={t.id} task={t} />
           ))}
           {tasks.length === 0 && recurringItems.length === 0 && (
-            <p className="text-sm text-sage">No open garden tasks — inventory has {plantCount} plants.</p>
+            <p className="text-sm text-sage">No open garden tasks — inventory has {plants.length} plants.</p>
           )}
         </ul>
 
@@ -63,6 +64,13 @@ export function GardenModule({
             </ul>
           </div>
         )}
+
+        <div className="mt-5">
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-sage">
+            Plant library
+          </p>
+          <PlantLibrary plants={plants} />
+        </div>
       </ExpandableSection>
     </div>
   );

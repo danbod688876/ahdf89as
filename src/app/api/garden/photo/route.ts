@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { plants, gardenTasks, maintenanceItems } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { plants, gardenTasks, maintenanceItems, plantCarePlan } from "@/lib/db/schema";
+import { and, eq } from "drizzle-orm";
 import { parseBody, jsonError } from "@/lib/api-helpers";
 import { identifyPlant } from "@/lib/integrations/plantId";
-import { generateCareAdvice, generatePlantIdentifier, currentSeason } from "@/lib/integrations/claude";
+import { generateSeasonalCarePlan, generatePlantIdentifier, currentSeason } from "@/lib/integrations/claude";
 import { IntegrationError } from "@/lib/integrations/errors";
-import { computeNextDue } from "@/app/api/maintenance/route";
 import { GARDEN_LOCATION, getWeatherForecast } from "@/lib/integrations/weather";
+import { reconcileGardenSchedule } from "@/lib/garden";
 
 const CONFIDENCE_THRESHOLD = 0.6;
 
@@ -18,14 +18,16 @@ const photoRequestSchema = z.object({
 });
 
 /**
- * Photo capture flow (spec §2.7): plant ID -> low-confidence flag for manual
- * correction -> zone/season/forecast-specific care advice -> save the real
- * photo as reference -> recurring actions become MaintenanceItem rows,
- * one-offs become GardenTasks. Zone, season, and the current forecast are
- * all derived here rather than trusted from the client — there's exactly
- * one garden location for this app (spec §2.7/§5). Falls back to a clear
- * error (manual name entry) if the ID service is down rather than
- * blocking (§4.6).
+ * Photo capture flow: plant ID -> low-confidence flag for manual
+ * correction -> a full year-round care plan (all four seasons, not just
+ * right now) -> save the real photo as reference. The current season's
+ * plan is surfaced immediately via reconcileGardenSchedule (same path the
+ * dashboard uses on every load), so results show up with no extra step —
+ * the other three seasons' entries surface automatically as they arrive.
+ * Zone, season, and the current forecast are all derived here rather than
+ * trusted from the client — there's exactly one garden location for this
+ * app. Falls back to a clear error (manual name entry) if the ID service
+ * is down rather than blocking.
  */
 export async function POST(request: Request) {
   const body = await parseBody(request, photoRequestSchema);
@@ -68,59 +70,50 @@ export async function POST(request: Request) {
 
   if (!plant) return jsonError("Plant not found", 404);
 
-  let careActions;
+  let seasonalPlan;
   try {
     const weather = await getWeatherForecast();
-    careActions = await generateCareAdvice({
+    seasonalPlan = await generateSeasonalCarePlan({
       species: identification.species,
       zone: `${GARDEN_LOCATION.name}, ${GARDEN_LOCATION.zone}`,
-      season: currentSeason(),
+      currentSeason: currentSeason(),
       weather,
     });
   } catch (err) {
     if (err instanceof IntegrationError) {
       return NextResponse.json(
-        { plant, needsConfirmation, careActions: [], careAdviceUnavailable: true },
+        { plant, needsConfirmation, createdTasks: [], createdMaintenanceItems: [], careAdviceUnavailable: true },
         { status: 201 }
       );
     }
     throw err;
   }
 
-  const createdTasks = [];
-  const createdMaintenanceItems = [];
-  for (const action of careActions) {
-    if (action.type === "recurring") {
-      const today = new Date().toISOString().slice(0, 10);
-      const [item] = await db
-        .insert(maintenanceItems)
-        .values({
-          assetType: "garden",
-          assetName: plant.commonName,
-          assetRefId: plant.id,
-          task: action.text,
-          intervalDays: action.intervalDays ?? undefined,
-          lastDone: today,
-          nextDue: computeNextDue(today, action.intervalDays ?? undefined),
-        })
-        .returning();
-      createdMaintenanceItems.push(item);
-    } else {
-      const [task] = await db
-        .insert(gardenTasks)
-        .values({
-          plantId: plant.id,
-          rawText: action.text,
-          actionType: "other",
-          urgency: "this_week",
-        })
-        .returning();
-      createdTasks.push(task);
+  // Re-identifying an existing plant replaces its plan outright — the old
+  // one may no longer describe the same species.
+  await db.delete(plantCarePlan).where(eq(plantCarePlan.plantId, plant.id));
+  for (const { season, actions } of seasonalPlan) {
+    for (const action of actions) {
+      await db.insert(plantCarePlan).values({
+        plantId: plant.id,
+        season,
+        careKey: action.careKey,
+        action: action.action,
+        type: action.type,
+        intervalDays: action.intervalDays ?? undefined,
+        isWatering: action.isWatering,
+      });
     }
   }
 
-  return NextResponse.json(
-    { plant, needsConfirmation, createdTasks, createdMaintenanceItems },
-    { status: 201 }
-  );
+  await reconcileGardenSchedule({ plantId: plant.id });
+
+  const [createdTasks, createdMaintenanceItems] = await Promise.all([
+    db.query.gardenTasks.findMany({ where: and(eq(gardenTasks.plantId, plant.id), eq(gardenTasks.status, "open")) }),
+    db.query.maintenanceItems.findMany({
+      where: and(eq(maintenanceItems.assetRefId, plant.id), eq(maintenanceItems.assetType, "garden")),
+    }),
+  ]);
+
+  return NextResponse.json({ plant, needsConfirmation, createdTasks, createdMaintenanceItems }, { status: 201 });
 }

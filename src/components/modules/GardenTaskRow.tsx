@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Droplet, Scissors, Leaf, Eye, HelpCircle, Pencil, Repeat, X } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
-import { PlantThumbnail, plantIdentityLine } from "./PlantThumbnail";
+import { PlantThumbnail } from "./PlantThumbnail";
+import { plantIdentityLine } from "@/lib/utils";
 import type { GardenTask, Plant } from "@/lib/db/schema";
 
 const ACTION_ICON: Record<GardenTask["actionType"], typeof Droplet> = {

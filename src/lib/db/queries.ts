@@ -55,7 +55,7 @@ export async function getGardenTasks(status: "open" | "done" = "open") {
 }
 
 export async function getPlants() {
-  return db.query.plants.findMany();
+  return db.query.plants.findMany({ orderBy: (plants, { desc }) => desc(plants.createdAt) });
 }
 
 export async function getHouseholdTasks(status: "open" | "done" = "open") {

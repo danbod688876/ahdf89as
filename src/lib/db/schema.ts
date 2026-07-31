@@ -43,6 +43,8 @@ export const gardenUrgencyEnum = pgEnum("garden_urgency", ["today", "this_week",
 export const gardenTaskStatusEnum = pgEnum("garden_task_status", ["open", "done"]);
 export const householdTaskAssetTypeEnum = pgEnum("household_task_asset_type", ["home", "vehicle"]);
 export const householdTaskStatusEnum = pgEnum("household_task_status", ["open", "done"]);
+export const seasonEnum = pgEnum("season", ["winter", "spring", "summer", "fall"]);
+export const carePlanActionTypeEnum = pgEnum("care_plan_action_type", ["recurring", "one_off"]);
 
 // ---------- User ----------
 
@@ -148,6 +150,15 @@ export const maintenanceItems = pgTable("maintenance_items", {
   lastDone: date("last_done"),
   lastDoneMileage: integer("last_done_mileage"),
   nextDue: date("next_due"), // computed on write from lastDone + intervalDays
+  // Stable key (e.g. "watering") linking an ongoing recurring item back to
+  // its plant_care_plan row across season changes — lets reconcile find
+  // and update the same item's cadence rather than spawning a new one
+  // each time the season rolls over.
+  careKey: text("care_key"),
+  isWatering: boolean("is_watering").notNull().default(false),
+  // Set by the weather-aware reconcile step when a watering item's due
+  // date gets auto-pushed out; cleared once it no longer applies.
+  weatherNote: text("weather_note"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -193,6 +204,30 @@ export const gardenTasks = pgTable("garden_tasks", {
   createdBy: uuid("created_by").references(() => users.id),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
+});
+
+// A plant's year-round care profile, generated once from its photo ID
+// (all four seasons at once) rather than only "right now" — reconcile
+// surfaces each season's entries as they arrive so the task list builds
+// itself over time instead of requiring a fresh photo each visit.
+export const plantCarePlan = pgTable("plant_care_plan", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  plantId: uuid("plant_id")
+    .notNull()
+    .references(() => plants.id, { onDelete: "cascade" }),
+  season: seasonEnum("season").notNull(),
+  // Groups the same conceptual action (e.g. "watering") across all four
+  // season rows so a recurring item's cadence can be resynced instead of
+  // duplicated when the season changes.
+  careKey: text("care_key").notNull(),
+  action: text("action").notNull(),
+  type: carePlanActionTypeEnum("type").notNull(),
+  intervalDays: integer("interval_days"), // set when type = recurring
+  isWatering: boolean("is_watering").notNull().default(false),
+  // one_off: calendar year this season's task was last created.
+  // recurring: calendar year the linked item's cadence was last synced.
+  lastSurfacedYear: integer("last_surfaced_year"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 // One-off home/vehicle tasks captured via the universal capture bar — the
@@ -246,11 +281,16 @@ export const maintenanceLogRelations = relations(maintenanceLog, ({ one }) => ({
 
 export const plantsRelations = relations(plants, ({ many }) => ({
   tasks: many(gardenTasks),
+  carePlan: many(plantCarePlan),
 }));
 
 export const gardenTasksRelations = relations(gardenTasks, ({ one }) => ({
   plant: one(plants, { fields: [gardenTasks.plantId], references: [plants.id] }),
   creator: one(users, { fields: [gardenTasks.createdBy], references: [users.id] }),
+}));
+
+export const plantCarePlanRelations = relations(plantCarePlan, ({ one }) => ({
+  plant: one(plants, { fields: [plantCarePlan.plantId], references: [plants.id] }),
 }));
 
 export const householdTasksRelations = relations(householdTasks, ({ one }) => ({
@@ -271,3 +311,4 @@ export type MaintenanceLogEntry = typeof maintenanceLog.$inferSelect;
 export type Plant = typeof plants.$inferSelect;
 export type GardenTask = typeof gardenTasks.$inferSelect;
 export type HouseholdTask = typeof householdTasks.$inferSelect;
+export type PlantCarePlanEntry = typeof plantCarePlan.$inferSelect;
