@@ -4,6 +4,8 @@ import { parseBody, jsonError } from "@/lib/api-helpers";
 import { classifyCapture } from "@/lib/integrations/claude";
 import { IntegrationError } from "@/lib/integrations/errors";
 
+export const maxDuration = 30;
+
 const previewRequestSchema = z.object({
   rawText: z.string().min(1),
   moduleHint: z.enum(["garden", "home", "vehicle"]).optional(),

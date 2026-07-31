@@ -5,10 +5,14 @@ import { plants, gardenTasks, maintenanceItems, plantCarePlan } from "@/lib/db/s
 import { and, eq } from "drizzle-orm";
 import { parseBody, jsonError } from "@/lib/api-helpers";
 import { identifyPlant } from "@/lib/integrations/plantId";
-import { generateSeasonalCarePlan, generatePlantIdentifier, currentSeason } from "@/lib/integrations/claude";
+import { generateSeasonalCarePlan, currentSeason } from "@/lib/integrations/claude";
 import { IntegrationError } from "@/lib/integrations/errors";
 import { GARDEN_LOCATION, getWeatherForecast } from "@/lib/integrations/weather";
 import { reconcileGardenSchedule } from "@/lib/garden";
+
+// This route makes one Claude call plus a plant-ID call plus several DB
+// round trips — comfortably past the platform default on a cold path.
+export const maxDuration = 60;
 
 const CONFIDENCE_THRESHOLD = 0.6;
 
@@ -20,8 +24,9 @@ const photoRequestSchema = z.object({
 /**
  * Photo capture flow: plant ID -> low-confidence flag for manual
  * correction -> a full year-round care plan (all four seasons, not just
- * right now) -> save the real photo as reference. The current season's
- * plan is surfaced immediately via reconcileGardenSchedule (same path the
+ * right now, plus the identifying sentence — one Claude call, not two) ->
+ * save the real photo as reference. The current season's plan is
+ * surfaced immediately via reconcileGardenSchedule (same path the
  * dashboard uses on every load), so results show up with no extra step —
  * the other three seasons' entries surface automatically as they arrive.
  * Zone, season, and the current forecast are all derived here rather than
@@ -34,8 +39,11 @@ export async function POST(request: Request) {
   if (!body.ok) return body.response;
 
   let identification;
+  let weather;
   try {
-    identification = await identifyPlant(body.data.photoUrl);
+    // Independent of each other — identification only needs the photo,
+    // weather only needs the (fixed) garden location.
+    [identification, weather] = await Promise.all([identifyPlant(body.data.photoUrl), getWeatherForecast()]);
   } catch (err) {
     if (err instanceof IntegrationError) {
       return jsonError("Plant ID is unavailable right now — enter the plant name manually.", 502);
@@ -44,10 +52,6 @@ export async function POST(request: Request) {
   }
 
   const needsConfirmation = identification.confidence < CONFIDENCE_THRESHOLD;
-  const identifyingFeature = await generatePlantIdentifier(
-    identification.commonName,
-    identification.species
-  ).catch(() => null);
 
   const plantValues = {
     commonName: identification.commonName,
@@ -55,25 +59,15 @@ export async function POST(request: Request) {
     referencePhotoUrl: body.data.photoUrl,
     isRealPhoto: true,
     firstIdentifiedAt: new Date(),
-    identifyingFeature,
   };
-
   const plant = body.data.plantId
-    ? (
-        await db
-          .update(plants)
-          .set(plantValues)
-          .where(eq(plants.id, body.data.plantId))
-          .returning()
-      )[0]
+    ? (await db.update(plants).set(plantValues).where(eq(plants.id, body.data.plantId)).returning())[0]
     : (await db.insert(plants).values(plantValues).returning())[0];
-
   if (!plant) return jsonError("Plant not found", 404);
 
-  let seasonalPlan;
+  let planResult;
   try {
-    const weather = await getWeatherForecast();
-    seasonalPlan = await generateSeasonalCarePlan({
+    planResult = await generateSeasonalCarePlan({
       species: identification.species,
       zone: `${GARDEN_LOCATION.name}, ${GARDEN_LOCATION.zone}`,
       currentSeason: currentSeason(),
@@ -92,19 +86,22 @@ export async function POST(request: Request) {
   // Re-identifying an existing plant replaces its plan outright — the old
   // one may no longer describe the same species.
   await db.delete(plantCarePlan).where(eq(plantCarePlan.plantId, plant.id));
-  for (const { season, actions } of seasonalPlan) {
-    for (const action of actions) {
-      await db.insert(plantCarePlan).values({
-        plantId: plant.id,
-        season,
-        careKey: action.careKey,
-        action: action.action,
-        type: action.type,
-        intervalDays: action.intervalDays ?? undefined,
-        isWatering: action.isWatering,
-      });
-    }
-  }
+  const planRows = planResult.seasons.flatMap(({ season, actions }) =>
+    actions.map((action) => ({
+      plantId: plant.id,
+      season,
+      careKey: action.careKey,
+      action: action.action,
+      type: action.type,
+      intervalDays: action.intervalDays ?? undefined,
+      isWatering: action.isWatering,
+    }))
+  );
+
+  await Promise.all([
+    db.update(plants).set({ identifyingFeature: planResult.identifyingFeature }).where(eq(plants.id, plant.id)),
+    planRows.length > 0 ? db.insert(plantCarePlan).values(planRows) : Promise.resolve(),
+  ]);
 
   await reconcileGardenSchedule({ plantId: plant.id });
 
@@ -115,5 +112,8 @@ export async function POST(request: Request) {
     }),
   ]);
 
-  return NextResponse.json({ plant, needsConfirmation, createdTasks, createdMaintenanceItems }, { status: 201 });
+  return NextResponse.json(
+    { plant: { ...plant, identifyingFeature: planResult.identifyingFeature }, needsConfirmation, createdTasks, createdMaintenanceItems },
+    { status: 201 }
+  );
 }

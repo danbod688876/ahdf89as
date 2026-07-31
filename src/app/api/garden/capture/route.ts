@@ -4,6 +4,8 @@ import { parseBody, jsonError } from "@/lib/api-helpers";
 import { createGardenTasksFromCapture } from "@/lib/garden";
 import { IntegrationError } from "@/lib/integrations/errors";
 
+export const maxDuration = 30;
+
 const captureRequestSchema = z.object({
   rawText: z.string().min(1),
   createdBy: z.string().uuid().optional(),

@@ -8,6 +8,8 @@ import { IntegrationError } from "@/lib/integrations/errors";
 import { createGardenTasksFromCapture, resolvePlantIdForName } from "@/lib/garden";
 import { computeNextDue } from "@/app/api/maintenance/route";
 
+export const maxDuration = 30;
+
 const recurringSchema = z.object({
   interval: z.number().int().positive(),
   unit: z.enum(["days", "weeks", "months"]),

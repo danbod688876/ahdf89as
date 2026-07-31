@@ -226,6 +226,14 @@ const seasonalActionSchema = z.object({
 });
 
 const seasonalPlanSchema = z.object({
+  // Folded in here (rather than a separate generatePlantIdentifier call)
+  // so photo capture is one Claude round trip instead of two — this is
+  // the slow path users are actually waiting on.
+  identifyingFeature: z
+    .string()
+    .describe(
+      "One plain-language sentence describing the specific visual features to look for — leaf shape, color, texture, flower type/color, size, distinguishing marks. Written for someone with no gardening background matching this to what's actually in their yard, e.g. 'Look for glossy, dark green oval leaves speckled with cream or gold, sometimes with small red berries in winter.'"
+    ),
   seasons: z
     .array(
       z.object({
@@ -238,7 +246,7 @@ const seasonalPlanSchema = z.object({
 });
 
 export type SeasonalCareAction = z.infer<typeof seasonalActionSchema>;
-export type SeasonalCarePlan = z.infer<typeof seasonalPlanSchema>["seasons"];
+export type SeasonalCarePlanResult = z.infer<typeof seasonalPlanSchema>;
 
 export async function generateSeasonalCarePlan(input: {
   species: string;
@@ -246,7 +254,7 @@ export async function generateSeasonalCarePlan(input: {
   currentSeason: string;
   photoNotes?: string;
   weather?: WeatherSummary | null;
-}): Promise<SeasonalCarePlan> {
+}): Promise<SeasonalCarePlanResult> {
   try {
     const response = await client.messages.parse({
       model: "claude-opus-5",
@@ -262,7 +270,7 @@ export async function generateSeasonalCarePlan(input: {
             input.photoNotes ? `Visible in photo: ${input.photoNotes}` : null,
             forecastLine(input.weather),
             "",
-            "Build this plant's full year-round care plan, one entry per season — not just what to do right now. For each season, give specific, non-generic actions (watering cadence, pruning/fertilizing timing, protection needed) rather than generic species trivia. Use the forecast above, if given, only to inform right-now details for the current season; the other three should reflect typical conditions for the zone.",
+            "Build this plant's full year-round care plan, one entry per season — not just what to do right now. For each season, give specific, non-generic actions (watering cadence, pruning/fertilizing timing, protection needed) rather than generic species trivia. Use the forecast above, if given, only to inform right-now details for the current season; the other three should reflect typical conditions for the zone. Also give the single identifying-feature sentence described in the schema.",
           ]
             .filter(Boolean)
             .join("\n"),
@@ -272,7 +280,7 @@ export async function generateSeasonalCarePlan(input: {
     if (!response.parsed_output) {
       throw new IntegrationError("claude", "no parsed output returned");
     }
-    return response.parsed_output.seasons;
+    return response.parsed_output;
   } catch (err) {
     if (err instanceof IntegrationError) throw err;
     throw new IntegrationError("claude", "seasonal care plan generation failed", err);
