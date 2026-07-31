@@ -183,10 +183,7 @@ export function GardenTaskRow({ task }: { task: TaskWithPlant }) {
       <PlantThumbnail plant={task.plant} />
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="text-sm text-ink">{task.plant?.commonName ?? "Unidentified plant"}</p>
-            {identityLine && <p className="text-xs italic text-sage">{identityLine}</p>}
-          </div>
+          <p className="min-w-0 text-sm text-ink">{task.plant?.commonName ?? "Unidentified plant"}</p>
           <div className="flex shrink-0 items-center gap-1.5">
             <Badge tone={task.urgency === "today" ? "sand" : task.urgency === "this_week" ? "pine" : "sage"}>
               {task.urgency.replace("_", " ")}
@@ -196,9 +193,10 @@ export function GardenTaskRow({ task }: { task: TaskWithPlant }) {
             </button>
           </div>
         </div>
-        {/* Full width of this column, not squeezed alongside the badge/edit
-            button above — that's what caused single-word-per-line wrapping
-            on narrow phone screens. */}
+        {/* identityLine and the detail paragraph both need the column's
+            full width, not squeezed alongside the badge/edit button above
+            — that's what caused single-word-per-line wrapping before. */}
+        {identityLine && <p className="text-xs italic text-sage">{identityLine}</p>}
         <p className="mt-1 flex items-start gap-1 text-xs text-ink">
           <Icon className="mt-0.5 size-3 shrink-0 text-sage" />
           <span>{task.detail ?? task.rawText}</span>

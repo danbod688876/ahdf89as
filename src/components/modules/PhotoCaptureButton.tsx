@@ -27,14 +27,19 @@ type QueueItem = {
 
 const UPLOAD_TIMEOUT_MS = 45_000;
 const IDENTIFY_TIMEOUT_MS = 65_000; // a touch above the route's own maxDuration=60
+const CONCURRENCY = 3; // conservative against Claude/plant-ID rate limits
 
 /**
  * Photo capture flow: upload one or many photos -> plant ID -> a
  * year-round care plan, saved straight to the garden's task list — no
  * separate confirmation step beyond correcting a low-confidence name.
- * Multiple files are processed one at a time (not in parallel) to stay
- * conservative against Claude/plant-ID rate limits and Vercel function
- * concurrency, with progress visible and stoppable mid-batch. Each
+ *
+ * A batch processes up to CONCURRENCY photos at once rather than strictly
+ * one-at-a-time. Each identify request carries keepalive: true, so once
+ * it's been dispatched it keeps running server-side and finishes even if
+ * this tab is closed — the point of a big batch is not having to sit and
+ * watch it. "Stop" only holds back photos that haven't started yet;
+ * anything already in flight keeps going regardless; either way. Each
  * upload goes directly from the browser to Blob storage (POST
  * /api/garden/upload issues a short-lived token) so a full-res phone
  * photo never has to fit through a serverless function's request body
@@ -46,82 +51,80 @@ export function PhotoCaptureButton({ className }: { className?: string }) {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const stopRef = useRef(false);
-  const activeControllerRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function reset() {
     setQueue([]);
     setIsProcessing(false);
     stopRef.current = false;
-    activeControllerRef.current = null;
-  }
-
-  function stopProcessing() {
-    stopRef.current = true;
-    activeControllerRef.current?.abort();
   }
 
   function updateItem(id: string, patch: Partial<QueueItem>) {
     setQueue((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)));
   }
 
+  async function processItem(item: QueueItem) {
+    updateItem(item.id, { status: "uploading" });
+    const uploadController = new AbortController();
+    const uploadTimeout = setTimeout(() => uploadController.abort(), UPLOAD_TIMEOUT_MS);
+
+    try {
+      // multipart: chunks + parallel parts + automatic retry — a single
+      // unchunked PUT has no retry at all, so any hiccup on a mobile
+      // connection just hangs forever with nothing to recover it.
+      const blob = await upload(item.file.name, item.file, {
+        access: "public",
+        handleUploadUrl: "/api/garden/upload",
+        multipart: true,
+        abortSignal: uploadController.signal,
+      });
+      clearTimeout(uploadTimeout);
+
+      updateItem(item.id, { status: "identifying" });
+      const identifyController = new AbortController();
+      const identifyTimeout = setTimeout(() => identifyController.abort(), IDENTIFY_TIMEOUT_MS);
+
+      const res = await fetch("/api/garden/photo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photoUrl: blob.url }),
+        signal: identifyController.signal,
+        keepalive: true,
+      });
+      clearTimeout(identifyTimeout);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error ?? "Couldn't identify this plant — try the text capture bar instead.");
+      }
+      updateItem(item.id, { status: "done", result: data, nameCorrection: data.plant.commonName });
+      router.refresh();
+    } catch (err) {
+      clearTimeout(uploadTimeout);
+      const aborted = err instanceof Error && err.name === "AbortError";
+      const message = aborted
+        ? "Timed out — check your connection and try again."
+        : err instanceof Error
+          ? err.message
+          : "Something went wrong.";
+      updateItem(item.id, { status: "error", error: message });
+    }
+  }
+
   async function processQueue(items: QueueItem[]) {
     setIsProcessing(true);
     stopRef.current = false;
-    for (const item of items) {
-      if (stopRef.current) break;
+    let nextIndex = 0;
 
-      updateItem(item.id, { status: "uploading" });
-      const uploadController = new AbortController();
-      activeControllerRef.current = uploadController;
-      const uploadTimeout = setTimeout(() => uploadController.abort(), UPLOAD_TIMEOUT_MS);
-
-      try {
-        // multipart: chunks + parallel parts + automatic retry — a single
-        // unchunked PUT has no retry at all, so any hiccup on a mobile
-        // connection just hangs forever with nothing to recover it.
-        const blob = await upload(item.file.name, item.file, {
-          access: "public",
-          handleUploadUrl: "/api/garden/upload",
-          multipart: true,
-          abortSignal: uploadController.signal,
-        });
-        clearTimeout(uploadTimeout);
-        if (stopRef.current) break;
-
-        updateItem(item.id, { status: "identifying" });
-        const identifyController = new AbortController();
-        activeControllerRef.current = identifyController;
-        const identifyTimeout = setTimeout(() => identifyController.abort(), IDENTIFY_TIMEOUT_MS);
-
-        const res = await fetch("/api/garden/photo", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ photoUrl: blob.url }),
-          signal: identifyController.signal,
-        });
-        clearTimeout(identifyTimeout);
-        const data = await res.json();
-        if (!res.ok) {
-          throw new Error(data?.error ?? "Couldn't identify this plant — try the text capture bar instead.");
-        }
-        updateItem(item.id, { status: "done", result: data, nameCorrection: data.plant.commonName });
-        router.refresh();
-      } catch (err) {
-        clearTimeout(uploadTimeout);
-        const aborted = err instanceof Error && err.name === "AbortError";
-        const message = aborted
-          ? stopRef.current
-            ? "Stopped"
-            : "Timed out — check your connection and try again."
-          : err instanceof Error
-            ? err.message
-            : "Something went wrong.";
-        updateItem(item.id, { status: "error", error: message });
-      } finally {
-        activeControllerRef.current = null;
+    async function worker() {
+      for (;;) {
+        if (stopRef.current) return;
+        const i = nextIndex++;
+        if (i >= items.length) return;
+        await processItem(items[i]);
       }
     }
+
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, items.length) }, worker));
     setIsProcessing(false);
   }
 
@@ -174,21 +177,16 @@ export function PhotoCaptureButton({ className }: { className?: string }) {
       </button>
 
       {isOpen && (
-        <div
-          className="fixed inset-0 z-30 flex items-end justify-center bg-ink/30 p-4 sm:items-center"
-          onClick={() => !isProcessing && setIsOpen(false)}
-        >
+        <div className="fixed inset-0 z-30 flex items-end justify-center bg-ink/30 p-4 sm:items-center" onClick={() => setIsOpen(false)}>
           <div
             className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl bg-mist p-5 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
               <h2 className="font-serif text-xl text-ink">Identify plants</h2>
-              {!isProcessing && (
-                <button type="button" onClick={() => setIsOpen(false)} aria-label="Close" className="text-sage hover:text-ink">
-                  <X className="size-5" />
-                </button>
-              )}
+              <button type="button" onClick={() => setIsOpen(false)} aria-label="Close" className="text-sage hover:text-ink">
+                <X className="size-5" />
+              </button>
             </div>
 
             <input
@@ -220,18 +218,26 @@ export function PhotoCaptureButton({ className }: { className?: string }) {
                     <p className="text-xs text-sage">
                       {allSettled
                         ? `${doneCount} identified${errorCount ? `, ${errorCount} failed` : ""}`
-                        : `Processing ${doneCount + errorCount + 1} of ${queue.length}…`}
+                        : `${doneCount + errorCount} of ${queue.length} processed…`}
                     </p>
                     {isProcessing && (
                       <button
                         type="button"
-                        onClick={stopProcessing}
+                        onClick={() => {
+                          stopRef.current = true;
+                        }}
                         className="flex items-center gap-1 rounded-full bg-sand/20 px-2.5 py-1 text-xs font-medium text-[#8a6a3f]"
                       >
                         <Square className="size-3" /> Stop
                       </button>
                     )}
                   </div>
+                )}
+
+                {isProcessing && (
+                  <p className="mt-2 text-xs text-sage">
+                    You can close this — plants will appear in your library as they finish.
+                  </p>
                 )}
 
                 <ul className="mt-3 space-y-2">
