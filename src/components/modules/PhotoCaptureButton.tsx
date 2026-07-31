@@ -25,9 +25,40 @@ type QueueItem = {
   nameCorrection?: string;
 };
 
-const UPLOAD_TIMEOUT_MS = 45_000;
+const UPLOAD_TIMEOUT_MS = 90_000;
 const IDENTIFY_TIMEOUT_MS = 65_000; // a touch above the route's own maxDuration=60
-const CONCURRENCY = 3; // conservative against Claude/plant-ID rate limits
+const CONCURRENCY = 3; // for the identify step only — see uploadSemaphore below
+
+/**
+ * Runs at most `limit` callbacks concurrently, queuing the rest. Used to
+ * force actual file uploads to run one at a time even though several
+ * items are "in flight" in the worker pool below — the uploads are
+ * bandwidth-bound on the user's own connection, so running several at
+ * once just divides their bandwidth N ways and makes each one slower
+ * (and more likely to hit the timeout) rather than faster. The identify
+ * step that follows each upload has no such constraint, so it stays
+ * concurrent.
+ */
+function createSemaphore(limit: number) {
+  let active = 0;
+  const queue: (() => void)[] = [];
+  return function run<T>(fn: () => Promise<T>): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const attempt = () => {
+        active++;
+        fn()
+          .then(resolve, reject)
+          .finally(() => {
+            active--;
+            const next = queue.shift();
+            if (next) next();
+          });
+      };
+      if (active < limit) attempt();
+      else queue.push(attempt);
+    });
+  };
+}
 
 /**
  * Photo capture flow: upload one or many photos -> plant ID -> a
@@ -52,6 +83,7 @@ export function PhotoCaptureButton({ className }: { className?: string }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const stopRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadSemaphore = useRef(createSemaphore(1)).current;
 
   function reset() {
     setQueue([]);
@@ -71,13 +103,17 @@ export function PhotoCaptureButton({ className }: { className?: string }) {
     try {
       // multipart: chunks + parallel parts + automatic retry — a single
       // unchunked PUT has no retry at all, so any hiccup on a mobile
-      // connection just hangs forever with nothing to recover it.
-      const blob = await upload(item.file.name, item.file, {
-        access: "public",
-        handleUploadUrl: "/api/garden/upload",
-        multipart: true,
-        abortSignal: uploadController.signal,
-      });
+      // connection just hangs forever with nothing to recover it. The
+      // semaphore keeps only one actual upload running at a time across
+      // the whole batch (see createSemaphore above).
+      const blob = await uploadSemaphore(() =>
+        upload(item.file.name, item.file, {
+          access: "public",
+          handleUploadUrl: "/api/garden/upload",
+          multipart: true,
+          abortSignal: uploadController.signal,
+        })
+      );
       clearTimeout(uploadTimeout);
 
       updateItem(item.id, { status: "identifying" });
@@ -100,7 +136,11 @@ export function PhotoCaptureButton({ className }: { className?: string }) {
       router.refresh();
     } catch (err) {
       clearTimeout(uploadTimeout);
-      const aborted = err instanceof Error && err.name === "AbortError";
+      // @vercel/blob catches the native AbortError internally and
+      // rethrows its own BlobRequestAbortedError with a generic message
+      // ("The request was aborted.") — name isn't "AbortError" anymore,
+      // so detect it by message instead of relying on err.name alone.
+      const aborted = err instanceof Error && (err.name === "AbortError" || /\baborted\b/i.test(err.message));
       const message = aborted
         ? "Timed out — check your connection and try again."
         : err instanceof Error
