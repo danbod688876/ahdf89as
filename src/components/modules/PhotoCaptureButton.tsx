@@ -25,6 +25,9 @@ type QueueItem = {
   nameCorrection?: string;
 };
 
+const UPLOAD_TIMEOUT_MS = 45_000;
+const IDENTIFY_TIMEOUT_MS = 65_000; // a touch above the route's own maxDuration=60
+
 /**
  * Photo capture flow: upload one or many photos -> plant ID -> a
  * year-round care plan, saved straight to the garden's task list — no
@@ -43,12 +46,19 @@ export function PhotoCaptureButton({ className }: { className?: string }) {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const stopRef = useRef(false);
+  const activeControllerRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function reset() {
     setQueue([]);
     setIsProcessing(false);
     stopRef.current = false;
+    activeControllerRef.current = null;
+  }
+
+  function stopProcessing() {
+    stopRef.current = true;
+    activeControllerRef.current?.abort();
   }
 
   function updateItem(id: string, patch: Partial<QueueItem>) {
@@ -60,20 +70,37 @@ export function PhotoCaptureButton({ className }: { className?: string }) {
     stopRef.current = false;
     for (const item of items) {
       if (stopRef.current) break;
+
       updateItem(item.id, { status: "uploading" });
+      const uploadController = new AbortController();
+      activeControllerRef.current = uploadController;
+      const uploadTimeout = setTimeout(() => uploadController.abort(), UPLOAD_TIMEOUT_MS);
+
       try {
+        // multipart: chunks + parallel parts + automatic retry — a single
+        // unchunked PUT has no retry at all, so any hiccup on a mobile
+        // connection just hangs forever with nothing to recover it.
         const blob = await upload(item.file.name, item.file, {
           access: "public",
           handleUploadUrl: "/api/garden/upload",
+          multipart: true,
+          abortSignal: uploadController.signal,
         });
+        clearTimeout(uploadTimeout);
         if (stopRef.current) break;
 
         updateItem(item.id, { status: "identifying" });
+        const identifyController = new AbortController();
+        activeControllerRef.current = identifyController;
+        const identifyTimeout = setTimeout(() => identifyController.abort(), IDENTIFY_TIMEOUT_MS);
+
         const res = await fetch("/api/garden/photo", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ photoUrl: blob.url }),
+          signal: identifyController.signal,
         });
+        clearTimeout(identifyTimeout);
         const data = await res.json();
         if (!res.ok) {
           throw new Error(data?.error ?? "Couldn't identify this plant — try the text capture bar instead.");
@@ -81,10 +108,18 @@ export function PhotoCaptureButton({ className }: { className?: string }) {
         updateItem(item.id, { status: "done", result: data, nameCorrection: data.plant.commonName });
         router.refresh();
       } catch (err) {
-        updateItem(item.id, {
-          status: "error",
-          error: err instanceof Error ? err.message : "Something went wrong.",
-        });
+        clearTimeout(uploadTimeout);
+        const aborted = err instanceof Error && err.name === "AbortError";
+        const message = aborted
+          ? stopRef.current
+            ? "Stopped"
+            : "Timed out — check your connection and try again."
+          : err instanceof Error
+            ? err.message
+            : "Something went wrong.";
+        updateItem(item.id, { status: "error", error: message });
+      } finally {
+        activeControllerRef.current = null;
       }
     }
     setIsProcessing(false);
@@ -190,9 +225,7 @@ export function PhotoCaptureButton({ className }: { className?: string }) {
                     {isProcessing && (
                       <button
                         type="button"
-                        onClick={() => {
-                          stopRef.current = true;
-                        }}
+                        onClick={stopProcessing}
                         className="flex items-center gap-1 rounded-full bg-sand/20 px-2.5 py-1 text-xs font-medium text-[#8a6a3f]"
                       >
                         <Square className="size-3" /> Stop
