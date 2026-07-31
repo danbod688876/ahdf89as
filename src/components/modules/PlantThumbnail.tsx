@@ -30,7 +30,7 @@ export function PlantThumbnail({ plant }: { plant: Plant | null | undefined }) {
         onClick={() => hasPhoto && setIsOpen(true)}
         disabled={!hasPhoto}
         aria-label={hasPhoto ? `View larger photo of ${plant?.commonName}` : undefined}
-        className="group relative size-28 shrink-0 overflow-hidden rounded-xl bg-sage/15 disabled:cursor-default"
+        className="group relative size-20 shrink-0 overflow-hidden rounded-xl bg-sage/15 disabled:cursor-default sm:size-28"
       >
         {hasPhoto && (
           <>
