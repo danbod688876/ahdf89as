@@ -28,6 +28,39 @@ type QueueItem = {
 const UPLOAD_TIMEOUT_MS = 90_000;
 const IDENTIFY_TIMEOUT_MS = 65_000; // a touch above the route's own maxDuration=60
 const CONCURRENCY = 3; // for the identify step only — see uploadSemaphore below
+const MAX_DIMENSION = 1600; // plant ID doesn't need a 24MP original
+
+/**
+ * A modern phone photo is routinely 4000px+ on the long edge and several
+ * MB — none of which plant ID needs. Downscaling and re-encoding client
+ * side (before it ever touches the network) is what actually fixes slow
+ * uploads on a weak connection; the timeout/retry work above just makes
+ * failure less silent, it doesn't make a 8MB photo upload fast. Falls
+ * back to the original file if the browser can't decode it for any
+ * reason, rather than blocking the upload on this being perfect.
+ */
+async function prepareForUpload(file: File): Promise<File> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, MAX_DIMENSION / Math.max(bitmap.width, bitmap.height));
+    const width = Math.round(bitmap.width * scale);
+    const height = Math.round(bitmap.height * scale);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.82));
+    if (!blob) return file;
+    return new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" });
+  } catch {
+    return file;
+  }
+}
 
 /**
  * Runs at most `limit` callbacks concurrently, queuing the rest. Used to
@@ -101,13 +134,15 @@ export function PhotoCaptureButton({ className }: { className?: string }) {
     const uploadTimeout = setTimeout(() => uploadController.abort(), UPLOAD_TIMEOUT_MS);
 
     try {
+      const fileToUpload = await prepareForUpload(item.file);
+
       // multipart: chunks + parallel parts + automatic retry — a single
       // unchunked PUT has no retry at all, so any hiccup on a mobile
       // connection just hangs forever with nothing to recover it. The
       // semaphore keeps only one actual upload running at a time across
       // the whole batch (see createSemaphore above).
       const blob = await uploadSemaphore(() =>
-        upload(item.file.name, item.file, {
+        upload(fileToUpload.name, fileToUpload, {
           access: "public",
           handleUploadUrl: "/api/garden/upload",
           multipart: true,
