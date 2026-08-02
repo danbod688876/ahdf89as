@@ -94,32 +94,37 @@ export function MaintenanceItemRow({ item }: { item: ItemWithLog }) {
       <button
         type="button"
         onClick={() => setIsExpanded((v) => !v)}
-        className="flex w-full items-center justify-between gap-3 px-2.5 py-1.5 text-left"
+        className="flex w-full items-start gap-3 px-2.5 py-2 text-left"
       >
-        <div className="flex min-w-0 items-center gap-3">
-          {isGardenItem && <PlantThumbnail plant={item.plant} />}
-          <div className="min-w-0">
-            <p className="truncate text-sm text-ink">{item.task}</p>
-            {identityLine && <p className="truncate text-xs italic text-sage">{identityLine}</p>}
+        {isGardenItem && <PlantThumbnail plant={item.plant} />}
+        <div className="min-w-0 flex-1">
+          {/* Task name and identity line get the column's full width —
+              the due badge shares a row with the "last done" caption
+              below instead of squeezing this text, which is what caused
+              long task text ("japanese laurel need watering") to get cut
+              down to a few characters. */}
+          <p className="text-sm text-ink">{item.task}</p>
+          {identityLine && <p className="line-clamp-2 text-xs italic text-sage">{identityLine}</p>}
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
             <p className="text-xs text-sage">
               {item.lastDone
                 ? `Last done ${format(new Date(item.lastDone), "MMM d, yyyy")}`
                 : "Not logged yet"}
               {showCostAndNote && cost !== null && ` · ${currency(cost)}`}
             </p>
-            {item.weatherNote && <p className="text-xs italic text-sage">☔ {item.weatherNote}</p>}
+            {item.nextDue && (
+              <Badge tone={daysUntil !== null && daysUntil < 0 ? "sand" : "sage"}>
+                {daysUntil !== null && daysUntil < 0
+                  ? "overdue"
+                  : `due ${format(new Date(item.nextDue), "MMM d")}`}
+              </Badge>
+            )}
           </div>
+          {item.weatherNote && <p className="mt-1 text-xs italic text-sage">☔ {item.weatherNote}</p>}
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {item.nextDue && (
-            <Badge tone={daysUntil !== null && daysUntil < 0 ? "sand" : "sage"}>
-              {daysUntil !== null && daysUntil < 0
-                ? "overdue"
-                : `due ${format(new Date(item.nextDue), "MMM d")}`}
-            </Badge>
-          )}
-          <ChevronDown className={cn("size-3.5 text-sage transition-transform", isExpanded && "rotate-180")} />
-        </div>
+        <ChevronDown
+          className={cn("mt-0.5 size-3.5 shrink-0 text-sage transition-transform", isExpanded && "rotate-180")}
+        />
       </button>
 
       {isExpanded && (

@@ -51,6 +51,31 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T
 }
 
 /**
+ * Aborts `controller` after `ms`. A plain setTimeout isn't enough here:
+ * mobile browsers throttle (sometimes effectively pause) timers in a
+ * backgrounded tab, which is exactly what happens if someone locks their
+ * phone or switches apps while waiting — the deadline is a real
+ * timestamp, not just a timer, so the moment the tab becomes visible
+ * again we catch up immediately instead of waiting on a timer that may
+ * not have fired.
+ */
+function armDeadline(controller: AbortController, ms: number): () => void {
+  const deadline = Date.now() + ms;
+  const check = () => {
+    if (Date.now() >= deadline) controller.abort();
+  };
+  const timer = setTimeout(check, ms);
+  const onVisible = () => {
+    if (document.visibilityState === "visible") check();
+  };
+  document.addEventListener("visibilitychange", onVisible);
+  return () => {
+    clearTimeout(timer);
+    document.removeEventListener("visibilitychange", onVisible);
+  };
+}
+
+/**
  * A modern phone photo is routinely 4000px+ on the long edge and several
  * MB — none of which plant ID needs. Downscaling and re-encoding client
  * side (before it ever touches the network) is what actually fixes slow
@@ -157,27 +182,27 @@ export function PhotoCaptureButton({ className }: { className?: string }) {
 
     updateItem(item.id, { status: "uploading" });
     const uploadController = new AbortController();
-    const uploadTimeout = setTimeout(() => uploadController.abort(), UPLOAD_TIMEOUT_MS);
+    const disarmUploadDeadline = armDeadline(uploadController, UPLOAD_TIMEOUT_MS);
 
     try {
-      // multipart: chunks + parallel parts + automatic retry — a single
-      // unchunked PUT has no retry at all, so any hiccup on a mobile
-      // connection just hangs forever with nothing to recover it. The
-      // semaphore keeps only one actual upload running at a time across
-      // the whole batch (see createSemaphore above).
+      // Compression already shrank this to well under 1MB, so a single
+      // PUT is simpler and has less to go wrong than multipart's several
+      // sequential requests (create/upload-parts/complete) — multipart
+      // only earns its complexity back on files too big for one request,
+      // which nothing here should be anymore. The semaphore keeps only
+      // one actual upload running at a time across the whole batch.
       const blob = await uploadSemaphore(() =>
         upload(fileToUpload.name, fileToUpload, {
           access: "public",
           handleUploadUrl: "/api/garden/upload",
-          multipart: true,
           abortSignal: uploadController.signal,
         })
       );
-      clearTimeout(uploadTimeout);
+      disarmUploadDeadline();
 
       updateItem(item.id, { status: "identifying" });
       const identifyController = new AbortController();
-      const identifyTimeout = setTimeout(() => identifyController.abort(), IDENTIFY_TIMEOUT_MS);
+      const disarmIdentifyDeadline = armDeadline(identifyController, IDENTIFY_TIMEOUT_MS);
 
       const res = await fetch("/api/garden/photo", {
         method: "POST",
@@ -186,7 +211,7 @@ export function PhotoCaptureButton({ className }: { className?: string }) {
         signal: identifyController.signal,
         keepalive: true,
       });
-      clearTimeout(identifyTimeout);
+      disarmIdentifyDeadline();
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data?.error ?? "Couldn't identify this plant — try the text capture bar instead.");
@@ -194,7 +219,7 @@ export function PhotoCaptureButton({ className }: { className?: string }) {
       updateItem(item.id, { status: "done", result: data, nameCorrection: data.plant.commonName });
       router.refresh();
     } catch (err) {
-      clearTimeout(uploadTimeout);
+      disarmUploadDeadline();
       // @vercel/blob catches the native AbortError internally and
       // rethrows its own BlobRequestAbortedError with a generic message
       // ("The request was aborted.") — name isn't "AbortError" anymore,
