@@ -19,16 +19,36 @@ type QueueItem = {
   id: string;
   file: File;
   previewUrl: string;
-  status: "pending" | "uploading" | "identifying" | "done" | "error";
+  status: "pending" | "preparing" | "uploading" | "identifying" | "done" | "error";
   result?: PhotoResult;
   error?: string;
   nameCorrection?: string;
 };
 
+const PREPARE_TIMEOUT_MS = 15_000;
 const UPLOAD_TIMEOUT_MS = 90_000;
 const IDENTIFY_TIMEOUT_MS = 65_000; // a touch above the route's own maxDuration=60
 const CONCURRENCY = 3; // for the identify step only — see uploadSemaphore below
 const MAX_DIMENSION = 1600; // plant ID doesn't need a 24MP original
+
+/** Races a promise against a fallback value — used so a stuck (not just
+ * slow) client-side step can never hang the UI forever; it just gives up
+ * and moves on with the fallback. */
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    promise.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(fallback);
+      }
+    );
+  });
+}
 
 /**
  * A modern phone photo is routinely 4000px+ on the long edge and several
@@ -129,13 +149,17 @@ export function PhotoCaptureButton({ className }: { className?: string }) {
   }
 
   async function processItem(item: QueueItem) {
+    updateItem(item.id, { status: "preparing" });
+    // prepareForUpload already falls back to the original file on any
+    // thrown error, but a stuck (not just slow) decode/encode on some
+    // device wouldn't throw at all — this guarantees we move on either way.
+    const fileToUpload = await withTimeout(prepareForUpload(item.file), PREPARE_TIMEOUT_MS, item.file);
+
     updateItem(item.id, { status: "uploading" });
     const uploadController = new AbortController();
     const uploadTimeout = setTimeout(() => uploadController.abort(), UPLOAD_TIMEOUT_MS);
 
     try {
-      const fileToUpload = await prepareForUpload(item.file);
-
       // multipart: chunks + parallel parts + automatic retry — a single
       // unchunked PUT has no retry at all, so any hiccup on a mobile
       // connection just hangs forever with nothing to recover it. The
@@ -323,6 +347,7 @@ export function PhotoCaptureButton({ className }: { className?: string }) {
                         <img src={item.previewUrl} alt="" className="absolute inset-0 size-full object-cover" />
                       </div>
                       <div className="min-w-0 flex-1">
+                        {item.status === "preparing" && <p className="text-xs text-sage">Compressing…</p>}
                         {item.status === "uploading" && <p className="text-xs text-sage">Uploading…</p>}
                         {item.status === "identifying" && <p className="text-xs text-sage">Identifying…</p>}
                         {item.status === "pending" && <p className="text-xs text-sage">Waiting…</p>}
@@ -340,7 +365,7 @@ export function PhotoCaptureButton({ className }: { className?: string }) {
                         )}
                       </div>
                       <div className="shrink-0">
-                        {(item.status === "uploading" || item.status === "identifying") && (
+                        {(item.status === "preparing" || item.status === "uploading" || item.status === "identifying") && (
                           <Loader2 className="size-4 animate-spin text-pine" />
                         )}
                         {item.status === "done" && <Check className="size-4 text-pine" />}
